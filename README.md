@@ -86,6 +86,11 @@ Copy the folders in [`host/skills/`](host/skills) into `~/.hermes/skills/` on yo
 - `android-phone-control`: how to drive the phone with the app's `actions` block.
 - `helper-team`: how to set up and consult helper profiles.
 
+## Host tuning (optional)
+[`host/TUNING.md`](host/TUNING.md): a patch that fixes context compression with Anthropic OAuth (the Pulse chat
+otherwise re-sends its whole history every turn), cheaper auxiliary models, and memory limits so a small host
+doesn't freeze.
+
 ## Docs
 - [`docs/protocol.md`](docs/protocol.md): the dashboard protocol the app speaks (REST + JSON-RPC WebSocket).
 - [`docs/design-allfather.md`](docs/design-allfather.md): the design system.
@@ -126,3 +131,7 @@ hermes plugins install kaishi00/hermes-conduit-notifier --enable
 `google-services.json` en `app/`, recompila y levanta el relay de [`relay/`](relay/README.md) en tu host.
 
 **Skills del host:** copia las carpetas de [`host/skills/`](host/skills) a `~/.hermes/skills/`.
+
+**Ajustes del host (opcional):** [`host/TUNING.md`](host/TUNING.md) trae un parche que arregla la compresión de
+contexto con OAuth de Anthropic (sin él, el chat de Pulse reenvía todo su historial en cada turno), modelos
+auxiliares más baratos y límites de memoria para que un host pequeño no se congele.

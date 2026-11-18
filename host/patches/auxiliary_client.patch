@@ -1,0 +1,30 @@
+diff --git a/agent/auxiliary_client.py b/agent/auxiliary_client.py
+index 88f1fa59b5..972d26a1cc 100644
+--- a/agent/auxiliary_client.py
++++ b/agent/auxiliary_client.py
+@@ -1690,8 +1690,9 @@ def _translate_anthropic_response_format(anthropic_kwargs: dict[str, Any], respo
+             return
+         schema = json_schema["schema"]
+     elif format_type == "json_object":
+-        # Anthropic SDK has no schema-less JSON mode; only ``json_schema``.
+-        schema = {"type": "object"}
++        # Anthropic has no schema-less JSON mode, and a bare {"type": "object"} schema 400s
++        # ("additionalProperties must be explicitly set to false"): leave JSON to the prompt.
++        return
+     else:
+         return
+     output_config = anthropic_kwargs.get("output_config")
+@@ -3849,6 +3850,13 @@ def _refresh_anthropic_credentials(failed_api_key: str = "") -> bool:
+     pool = load_pool("anthropic")
+     if pool.entry_id_for_api_key(token):
+         return pool.try_refresh_matching(api_key_hint=token) is not None
++    # AllFather patch: another process (gateway/dashboard share auth.json)
++    # already rotated this OAuth token, which revokes the old one. The pool on disk holds the new
++    # token, so report success and let the caller evict and rebuild the cached client.
++    with contextlib.suppress(Exception):
++        fresh = pool.select()
++        if fresh is not None and _pool_runtime_api_key(fresh) not in ("", token):
++            return True
+     creds = read_claude_code_credentials()
+     # Never spend an ambient login's refresh rotation for another request's key.
+     if isinstance(creds, dict) and creds.get("accessToken") == token and creds.get("refreshToken"):
