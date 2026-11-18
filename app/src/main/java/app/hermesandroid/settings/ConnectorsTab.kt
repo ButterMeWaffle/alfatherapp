@@ -1,5 +1,7 @@
 package app.hermesandroid.settings
 
+import app.hermesandroid.ui.components.Skeleton
+import app.hermesandroid.ui.components.ErrorState
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
@@ -78,9 +80,9 @@ fun ConnectorsTab(s: CapabilitiesState, q: String) {
         if (!s.mcpLoaded) s.loadConnectors()
         s.probeAll()
     }
-    if (!s.mcpLoaded) { Loading(); return }
-    s.mcpError?.let { Text(it, style = CType.footnote, color = c.red); SettingsButton(stringResource(R.string.capabilities_retry)) { scope.launch { s.loadConnectors(); s.probeAll() } }; return }
-    error?.let { Text(it, style = CType.footnote, color = c.red) }
+    if (!s.mcpLoaded) { Skeleton(); return }
+    s.mcpError?.let { ErrorState(it) { scope.launch { s.loadConnectors(); s.probeAll() } }; return }
+    error?.let { ErrorState(it) }
     fun matches(vararg t: String?) = q.isEmpty() || t.any { it?.contains(q, true) == true }
     val visible = s.servers.filter { matches(it.name, it.url, it.command, it.plugin) }
     // Problems first (CapabilityConnectorsTab rank), then by name.
@@ -89,7 +91,7 @@ fun ConnectorsTab(s: CapabilitiesState, q: String) {
     val off = visible.filter { !it.enabled }.sortedBy { it.name.lowercase() }
     val available = s.mcpCatalog.filter { !it.installed && s.servers.none { sv -> sv.name == it.name } && matches(it.name, it.description) }.sortedBy { it.name.lowercase() }
     if (connected.isEmpty() && off.isEmpty() && available.isEmpty()) {
-        Empty(if (q.isEmpty()) stringResource(R.string.connectorstab_empty, profileTitle(s.profile)) else stringResource(R.string.capabilities_no_match, q))
+        Empty(stringResource(R.string.connectorstab_empty, profileTitle(s.profile)), q)
         return
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -126,7 +128,7 @@ private fun ServerRow(s: CapabilitiesState, sv: McpServer, first: Boolean, onOpe
         else -> sv.url ?: (listOfNotNull(sv.command) + sv.args).joinToString(" ")
     }
     CapRow(sv.name, detail, first, listOf(sv.source(s.mcpCatalog) to null, label to tint), onClick = onOpen) {
-        CapSwitch(sv.enabled, enabled = sv.plugin == null) { on -> scope.launch { onError(s.setServerEnabled(sv.name, on)) } }
+        CapSwitch(sv.enabled, sv.name, enabled = sv.plugin == null) { on -> scope.launch { onError(s.setServerEnabled(sv.name, on)) } }
     }
 }
 

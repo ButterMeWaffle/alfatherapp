@@ -386,7 +386,7 @@ private fun Status(s: JsonObject?) {
     (s["milestones"] as? JsonArray).objs().forEach { m ->
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val done = m.bool("done") == true
-            Icon(if (done) AF.CheckCircle else AF.RadioButtonUnchecked, null, tint = if (done) c.success else c.tertiary, modifier = Modifier.size(16.dp))
+            Icon(if (done) AF.CheckCircle else AF.RadioButtonUnchecked, null, tint = if (done) c.success else c.secondary, modifier = Modifier.size(16.dp))
             Text(m.str("label").orEmpty(), style = CType.subheadline, color = if (done) c.text else c.secondary)
         }
     }

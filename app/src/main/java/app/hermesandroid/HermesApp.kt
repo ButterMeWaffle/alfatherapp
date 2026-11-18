@@ -22,6 +22,7 @@ import app.hermesandroid.sessions.ChatsState
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
@@ -51,11 +52,45 @@ fun trPlural(@PluralsRes id: Int, n: Int, vararg args: Any): String = HermesApp.
 enum class Page { Tasks, Bots, Settings, Projects, Artifacts, Pulse }
 
 /**
+ * One shared notice at the foot of the app (done, archived, couldn't…). [undo] puts things back; [commit] is what waits
+ * for the Undo to go (timed out, or replaced by the next notice) before it is sent, so an Undo never needs the host.
+ */
+class Notice(val text: String, val undo: (() -> Unit)? = null, val commit: (suspend () -> Unit)? = null) {
+    val shownMs get() = if (undo != null) 6000L else 4000L
+}
+
+/** The one notice on screen. A new one settles the one it replaces; each settles or undoes once. */
+class Notices(private val scope: CoroutineScope) {
+    var current by mutableStateOf<Notice?>(null)
+        private set
+    /** Bottom sheets open now: each is its own window over the app, so the notice is drawn inside it instead. */
+    var sheets by mutableStateOf(0)
+    /** [undo] is last so that a trailing lambda is the Undo (as [commit] last, one silently became the commit). */
+    fun notify(text: String, commit: (suspend () -> Unit)? = null, undo: (() -> Unit)? = null) {
+        current?.let(::settle)
+        current = Notice(text, undo, commit)
+    }
+    /** It left without Undo: what it held back goes out. */
+    fun settle(n: Notice) {
+        if (current !== n) return
+        current = null
+        n.commit?.let { scope.launch { it() } }
+    }
+    fun undo(n: Notice) {
+        if (current !== n) return
+        current = null
+        n.undo?.invoke()
+    }
+}
+
+/**
  * Process-wide app state, split by feature. Screens read Compose state from here and
  * from the feature states it owns; it outlives activities, so nothing is lost on rotation.
  */
 class AppGraph(private val context: Context) {
     val scope = MainScope()
+    val notices = Notices(scope)
+    fun notify(text: String, commit: (suspend () -> Unit)? = null, undo: (() -> Unit)? = null) = notices.notify(text, commit, undo)
     val store = Store(context)
     val client = HermesClient(store, scope)
 

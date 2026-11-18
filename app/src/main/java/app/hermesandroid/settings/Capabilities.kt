@@ -1,5 +1,10 @@
 package app.hermesandroid.settings
 
+import app.hermesandroid.ui.components.ErrorState
+import app.hermesandroid.ui.components.EmptyState
+import app.hermesandroid.ui.components.Skeleton
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -531,16 +536,16 @@ fun CapRow(title: String, subtitle: String?, first: Boolean, pills: List<Pair<St
 }
 
 @Composable
-fun CapSwitch(on: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+/** [label] is the row's title: the row itself opens the detail, so the switch needs its own name. */
+fun CapSwitch(on: Boolean, label: String, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     val c = C.colors
-    Switch(on, onChange, enabled = enabled, colors = SwitchDefaults.colors(checkedTrackColor = c.accent, checkedThumbColor = c.onAccent))
+    Switch(on, onChange, Modifier.semantics { contentDescription = label }, enabled = enabled, colors = SwitchDefaults.colors(checkedTrackColor = c.accent, checkedThumbColor = c.onAccent))
 }
 
+/** A tab with nothing to show: its own line, or "no match" while [q] filters it. */
 @Composable
-fun Empty(text: String) = Text(text, style = CType.subheadline, color = C.colors.secondary, modifier = Modifier.padding(16.dp))
+fun Empty(text: String, q: String = "") = if (q.isEmpty()) EmptyState(AF.Inbox, text) else EmptyState(AF.Search, stringResource(R.string.capabilities_no_match, q))
 
-@Composable
-fun Loading() = Row(Modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalArrangement = Arrangement.Center) { CircularProgressIndicator(color = C.colors.accent) }
 
 enum class CapTab(@StringRes val title: Int) { Skills(R.string.capabilities_tab_skills), Tools(R.string.capabilities_tools_title), Connectors(R.string.capabilities_tab_connectors), Plugins(R.string.capabilities_tab_plugins) }
 
@@ -556,8 +561,9 @@ fun CapabilitiesPage(graph: AppGraph) {
     Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp)).background(c.text.copy(alpha = 0.06f)).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(AF.Search, null, tint = c.secondary, modifier = Modifier.size(18.dp))
         Box(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-            if (query.isEmpty()) Text(stringResource(R.string.capabilities_search, stringResource(tab.title).lowercase()), style = CType.subheadline, color = c.tertiary)
-            BasicTextField(query, { query = it }, singleLine = true, textStyle = CType.subheadline.copy(color = c.text), cursorBrush = SolidColor(c.accent), modifier = Modifier.fillMaxWidth())
+            val hint = stringResource(R.string.capabilities_search, stringResource(tab.title).lowercase())
+            if (query.isEmpty()) Text(hint, style = CType.subheadline, color = c.secondary)
+            BasicTextField(query, { query = it }, singleLine = true, textStyle = CType.subheadline.copy(color = c.text), cursorBrush = SolidColor(c.accent), modifier = Modifier.fillMaxWidth().semantics { contentDescription = hint })
         }
         if (query.isNotEmpty()) Icon(AF.Close, stringResource(R.string.capabilities_clear), tint = c.secondary, modifier = Modifier.size(18.dp).pressable { query = "" })
     }
@@ -587,16 +593,16 @@ private fun SkillsTab(s: CapabilitiesState, q: String) {
         if (!s.skillsLoaded) s.loadSkills()
         if (s.official.isEmpty()) s.loadOfficial()
     }
-    if (!s.skillsLoaded) { Loading(); return }
-    s.skillsError?.let { Text(it, style = CType.footnote, color = c.red); SettingsButton(stringResource(R.string.capabilities_retry)) { scope.launch { s.loadSkills() } }; return }
-    error?.let { Text(it, style = CType.footnote, color = c.red) }
+    if (!s.skillsLoaded) { Skeleton(); return }
+    s.skillsError?.let { ErrorState(it) { scope.launch { s.loadSkills() } }; return }
+    error?.let { ErrorState(it) }
     val installed = s.skills.filter { it.matches(q) }.sortedWith(compareBy<Skill> { if (mostUsedFirst) -it.usage else it.usage }.thenBy { it.name.lowercase() })
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(R.string.capabilities_skills_active, s.skills.count { it.enabled }, s.skills.size), style = CType.footnote, color = c.secondary, modifier = Modifier.weight(1f).padding(start = 16.dp))
         Text(stringResource(if (mostUsedFirst) R.string.capabilities_most_used_first else R.string.capabilities_least_used_first), style = CType.footnote.semibold(), color = c.accent, modifier = Modifier.pressable { mostUsedFirst = !mostUsedFirst }.padding(8.dp))
     }
     CapSection(stringResource(R.string.capabilities_installed), stringResource(R.string.capabilities_new_sessions)) {
-        if (installed.isEmpty()) Empty(if (q.isEmpty()) stringResource(R.string.capabilities_no_skills) else stringResource(R.string.capabilities_no_match, q))
+        if (installed.isEmpty()) Empty(stringResource(R.string.capabilities_no_skills), q)
         installed.forEachIndexed { i, sk ->
             val pills = buildList {
                 add(prettyCategory(sk.category) to null)
@@ -604,7 +610,7 @@ private fun SkillsTab(s: CapabilitiesState, q: String) {
                 if (sk.usage > 0) add(pluralStringResource(R.plurals.capabilities_uses, sk.usage, sk.usage) to null)
             }
             CapRow(sk.name, sk.description, i == 0, pills, onClick = { openSkill = sk.name }) {
-                CapSwitch(sk.enabled) { on -> scope.launch { error = s.toggleSkill(sk.name, on) } }
+                CapSwitch(sk.enabled, sk.name) { on -> scope.launch { error = s.toggleSkill(sk.name, on) } }
             }
         }
     }
@@ -626,8 +632,8 @@ private fun SkillsTab(s: CapabilitiesState, q: String) {
 private fun SkillDocument(text: String?, error: String?) {
     val c = C.colors
     when {
-        error != null -> Text(error, style = CType.footnote, color = c.red)
-        text == null -> CircularProgressIndicator(Modifier.size(20.dp), color = c.accent, strokeWidth = 2.dp)
+        error != null -> ErrorState(error, inset = 0.dp)
+        text == null -> Skeleton(rows = 2, inset = 0.dp)
         else -> {
             val (fields, body) = parseFrontmatter(text)
             if (fields.isNotEmpty()) Card(stringResource(R.string.capabilities_details), AF.ListAlt) {

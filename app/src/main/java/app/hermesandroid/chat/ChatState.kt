@@ -90,6 +90,9 @@ class ChatState(val graph: AppGraph, private val context: Context) {
 
     var isOpen by mutableStateOf(false)
         private set
+    /** Bumped when a turn ends with an answer (not a stop, an error, a failed send or a phone-control step): the chat ticks a confirm. */
+    var answered by mutableStateOf(0)
+        private set
     /** Bumped whenever a chat is left: the transcript starts each chat with a fresh scroll state. */
     var opened by mutableStateOf(0)
         private set
@@ -335,7 +338,7 @@ class ChatState(val graph: AppGraph, private val context: Context) {
         info.bool("fast")?.let { fast = it }
         info.bool("yolo")?.let { yolo = it }
         // A Bot Chat keeps its bot's name; the stored title is always "Bot Chat".
-        if (chatProfile == null) info.str("title")?.takeIf { it.isNotBlank() && it != BOT_CHAT_TITLE }?.let { title = it }
+        if (chatProfile == null) info.str("title")?.takeIf { it.isNotBlank() && it != BOT_CHAT_TITLE }?.let { title = app.hermesandroid.sessions.ChatsState.readablePreview(it) }
     }
 
     // ---- history ----
@@ -439,9 +442,9 @@ class ChatState(val graph: AppGraph, private val context: Context) {
 
     /** The reply asked for steps on the phone: run them and show Allfather where they led (confirming risky ones by notification). */
     private fun controlStep() {
-        if (!app.hermesandroid.control.PhoneAgent.available) return
+        if (!app.hermesandroid.control.PhoneAgent.available) { answered++; return }
         val reply = app.hermesandroid.control.parseReply(messages.lastOrNull { it.role == Role.Assistant }?.text ?: return)
-        if (reply.actions.isEmpty()) { controlSteps = 0; app.hermesandroid.control.PhoneAgent.finished(reply.say); return }
+        if (reply.actions.isEmpty()) { controlSteps = 0; app.hermesandroid.control.PhoneAgent.finished(reply.say); answered++; return }
         graph.scope.launch {
             val step = app.hermesandroid.control.PhoneAgent.run(reply.actions, controlSteps, progress = { statusText = it }) ?: return@launch
             controlSteps = step.steps
@@ -847,7 +850,7 @@ class ChatState(val graph: AppGraph, private val context: Context) {
 
     private fun onEvent(e: HermesEvent) {
         val p = e.payload
-        if (e.type == "session.title" && p.str("session_id") == storedId) p.str("title")?.takeIf { it != BOT_CHAT_TITLE }?.let { title = it }
+        if (e.type == "session.title" && p.str("session_id") == storedId) p.str("title")?.takeIf { it != BOT_CHAT_TITLE }?.let { title = app.hermesandroid.sessions.ChatsState.readablePreview(it) }
         if (!isOpen || e.sessionId.isEmpty() || e.sessionId != runtimeId) return
         when (e.type) {
             "message.start" -> if (!running) startTurn() else { turnHadText = false; current = -1 }

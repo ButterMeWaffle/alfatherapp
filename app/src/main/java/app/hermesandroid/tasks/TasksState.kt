@@ -106,11 +106,12 @@ class TasksState(private val graph: AppGraph) {
     /** attachment id → its text, shown inline in the task sheet. */
     var preview by mutableStateOf<Pair<Long, String>?>(null)
         private set
-    var notice by mutableStateOf<String?>(null)
 
     // ---- Scheduled ----
     val jobs = mutableStateListOf<CronJob>()
     var jobsError by mutableStateOf<String?>(null)
+        private set
+    var jobsLoaded by mutableStateOf(false)
         private set
     val runs = mutableStateListOf<CronRun>()
     /** What each run produced, by session id: missing = not loaded yet, null = nothing to show. */
@@ -203,25 +204,23 @@ class TasksState(private val graph: AppGraph) {
         }
     }
 
-    fun loadBoard() {
-        graph.scope.launch {
-            loadingBoard = true
-            try {
-                val r = client.rest("GET", k("/board")).obj()
-                val cols = (r?.get("columns") as? JsonArray).orEmpty().mapNotNull { it.obj() }.map { c ->
-                    KColumn(c.str("name") ?: "unknown", (c["tasks"] as? JsonArray).orEmpty().mapNotNull { it.obj()?.let(::taskOf) })
-                }.filter { it.name != "archived" }
-                    .sortedBy { STATUS_ORDER.indexOf(it.name).let { i -> if (i < 0) 100 else i } }
-                columns.clear()
-                columns.addAll(cols)
-                assignees.clear()
-                assignees.addAll((r?.get("assignees") as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull })
-                boardError = null
-            } catch (e: Exception) {
-                boardError = kanbanError(e)
-            } finally {
-                loadingBoard = false
-            }
+    fun loadBoard() = graph.scope.launch {
+        loadingBoard = true
+        try {
+            val r = client.rest("GET", k("/board")).obj()
+            val cols = (r?.get("columns") as? JsonArray).orEmpty().mapNotNull { it.obj() }.map { c ->
+                KColumn(c.str("name") ?: "unknown", (c["tasks"] as? JsonArray).orEmpty().mapNotNull { it.obj()?.let(::taskOf) })
+            }.filter { it.name != "archived" }
+                .sortedBy { STATUS_ORDER.indexOf(it.name).let { i -> if (i < 0) 100 else i } }
+            columns.clear()
+            columns.addAll(cols)
+            assignees.clear()
+            assignees.addAll((r?.get("assignees") as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull })
+            boardError = null
+        } catch (e: Exception) {
+            boardError = kanbanError(e)
+        } finally {
+            loadingBoard = false
         }
     }
 
@@ -243,7 +242,7 @@ class TasksState(private val graph: AppGraph) {
                     (r["runs"] as? JsonArray).orEmpty().mapNotNull { it.obj() }.map(::runOf),
                     (r["attachments"] as? JsonArray).orEmpty().mapNotNull { it.obj()?.let(::attachmentOf) },
                 )
-            }.onFailure { notice = tr(R.string.tasksstate_open_task_failed, it.message.orEmpty()) }
+            }.onFailure { graph.notify(tr(R.string.tasksstate_open_task_failed, it.message.orEmpty())) }
         }
     }
 
@@ -257,7 +256,7 @@ class TasksState(private val graph: AppGraph) {
         val text = runCatching { client.rest("GET", client.withProfile("/api/fs/read-text?path=${enc(path)}")).obj() }.getOrNull()
         if (text != null && text.bool("binary") != true) { preview = a.id to text.str("text").orEmpty(); return@launch }
         runCatching { client.rest("GET", client.withProfile("/api/fs/read-data-url?path=${enc(path)}"), timeoutSec = 60).obj()?.str("dataUrl") }
-            .getOrNull()?.let { openDataUrl(ctx, it, a.name) } ?: run { notice = tr(R.string.tasksstate_open_file_failed, a.name) }
+            .getOrNull()?.let { openDataUrl(ctx, it, a.name) } ?: run { graph.notify(tr(R.string.tasksstate_open_file_failed, a.name)) }
     }
 
     fun loadLog(id: String) = graph.scope.launch {
@@ -272,7 +271,7 @@ class TasksState(private val graph: AppGraph) {
                 loadBoard()
                 refreshTask?.let(::openTask)
             } catch (e: Exception) {
-                notice = "$label: ${e.message}"
+                graph.notify("$label: ${e.message}")
             }
         }
     }
@@ -316,8 +315,8 @@ class TasksState(private val graph: AppGraph) {
     fun triageAction(t: KTask, action: String) = mutate(tr(R.string.tasksstate_triage_failed, defaultProfileTitle), t.id) {
         val r = client.rest("POST", k("/tasks/${enc(t.id)}/$action"), buildJsonObject { put("author", "allfather") }).obj()
         if (r?.bool("ok") == false) throw IllegalStateException(r.str("reason") ?: tr(R.string.tasksstate_rejected))
-        notice = if (action == "specify") tr(R.string.tasksstate_specified)
-        else ((r?.get("child_ids") as? JsonArray)?.size ?: 0).let { trPlural(R.plurals.tasksstate_decomposed, it, it) }
+        graph.notify(if (action == "specify") tr(R.string.tasksstate_specified)
+        else ((r?.get("child_ids") as? JsonArray)?.size ?: 0).let { trPlural(R.plurals.tasksstate_decomposed, it, it) })
     }
 
     fun delete(t: KTask) = mutate(tr(R.string.tasksstate_delete_failed)) {
@@ -325,22 +324,21 @@ class TasksState(private val graph: AppGraph) {
         detail = null
     }
 
-    fun nudge() = mutate(tr(R.string.tasksstate_nudge_failed)) { client.rest("POST", k("/dispatch"), buildJsonObject { }); notice = tr(R.string.tasksstate_nudged) }
+    fun nudge() = mutate(tr(R.string.tasksstate_nudge_failed)) { client.rest("POST", k("/dispatch"), buildJsonObject { }); graph.notify(tr(R.string.tasksstate_nudged)) }
 
     // ---- Scheduled jobs ----
 
-    fun loadJobs() {
-        graph.scope.launch {
-            try {
-                val r = client.rest("GET", client.withProfile("/api/cron/jobs"))
-                val list = (r as? JsonArray ?: r.obj()?.get("jobs") as? JsonArray).orEmpty().mapNotNull { it.obj()?.let(::jobOf) }
-                jobs.clear()
-                jobs.addAll(list.sortedWith(compareBy({ !it.enabled }, { it.name.lowercase() })))
-                jobsError = null
-            } catch (e: Exception) {
-                jobsError = e.message
-            }
+    fun loadJobs() = graph.scope.launch {
+        try {
+            val r = client.rest("GET", client.withProfile("/api/cron/jobs"))
+            val list = (r as? JsonArray ?: r.obj()?.get("jobs") as? JsonArray).orEmpty().mapNotNull { it.obj()?.let(::jobOf) }
+            jobs.clear()
+            jobs.addAll(list.sortedWith(compareBy({ !it.enabled }, { it.name.lowercase() })))
+            jobsError = null
+        } catch (e: Exception) {
+            jobsError = e.message
         }
+        jobsLoaded = true
     }
 
     fun loadRuns(job: CronJob) {
@@ -374,14 +372,14 @@ class TasksState(private val graph: AppGraph) {
 
     private fun jobMutation(label: String, block: suspend () -> Unit) {
         graph.scope.launch {
-            try { block(); loadJobs() } catch (e: Exception) { notice = "$label: ${e.message}" }
+            try { block(); loadJobs() } catch (e: Exception) { graph.notify("$label: ${e.message}") }
         }
     }
 
     /** pause / resume / trigger (run now). */
     fun jobAction(job: CronJob, action: String) = jobMutation(tr(R.string.tasksstate_job_failed)) {
         client.rest("POST", client.withProfile("/api/cron/jobs/${enc(job.id)}/$action", job.owner), buildJsonObject { put("profile", job.owner) })
-        if (action == "trigger") notice = tr(R.string.tasksstate_job_running, job.name)
+        if (action == "trigger") graph.notify(tr(R.string.tasksstate_job_running, job.name))
     }
 
     fun deleteJob(job: CronJob) = jobMutation(tr(R.string.tasksstate_delete_failed)) { client.rest("DELETE", client.withProfile("/api/cron/jobs/${enc(job.id)}", job.owner)); markRead(job.id) }

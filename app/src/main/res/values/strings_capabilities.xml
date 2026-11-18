@@ -3,7 +3,6 @@
     <!-- Settings > Capabilities (skills, tools, connectors, plugins) and the AllFather host plugin page -->
     <string name="capabilities_cancel">Cancel</string>
     <string name="capabilities_install">Install</string>
-    <string name="capabilities_retry">Retry</string>
     <string name="capabilities_enabled">Enabled</string>
     <string name="capabilities_new_sessions">Changes apply to new sessions.</string>
     <string name="capabilities_no_match">Nothing matches “%1$s”.</string>

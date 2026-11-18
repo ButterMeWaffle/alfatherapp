@@ -21,10 +21,16 @@ The app's look: **monochrome cyberpunk techwear, editorial**. Code lives in `app
 | `raised` | `#222224` | wells, pressed rows, segmented thumb (`well`) |
 | `hairline` | white 8 % | 1 px rules and card outlines (`Dp.Hairline`) |
 | `text` / `accent` | `#E9EAEC` | text, primary actions (off-white, never pure white) |
-| `secondary` / `tertiary` | text at 60 % / 35 % | supporting text, placeholders |
+| `secondary` | text at 60 % | supporting text, placeholders, times, counts, empty states (5.5–6.2:1) |
+| `tertiary` | text at 35 % | **only decoration**: chevrons, rules (2.8–2.9:1 fails text and the 3:1 for controls, so unchecked radios use `secondary`) |
 | `success` | `#4CD98A` | **only** the live dot |
 | `attention` / `orange` | `#F0B04A` | warnings, reconnecting |
-| `red` | `#E5484D` | errors, destructive actions |
+| `red` | `#EC5D5E` | errors, destructive actions: trigger and confirm (≥ 4.5:1 on every surface; glyphs on a red fill use `onAccent`) |
+
+Measured with the ux-ui-agent-skills `contrast.py` (2026-11-10). A destructive row is `SettingsRow(destructive = true)`
+behind an `AlertDialog` whose confirm is red, like every delete. A switch row in a settings card is
+`SettingsRow(…, checked = value, onCheckedChange = …)`: the whole row toggles and it keeps the icon well and text
+inset of its neighbours.
 
 Outside Compose (widget, shortcut icons, notifications) the same palette lives in `res/values/colors.xml`
 (`af_canvas`, `af_surface`, `af_ink`, `af_ink_secondary`, `af_outline`, `af_hairline`); keep the two in step.
@@ -43,8 +49,12 @@ Outside Compose (widget, shortcut icons, notifications) the same palette lives i
 - Surfaces: `Backdrop` (flat canvas), `settingsCard` (surface, no stroke), `well` (raised + hairline),
   `glass`/`frosted` (Haze blur, only over moving content: the sidebar over the chat), `fadeToCanvas` (portraits
   fading into the page).
-- Motion: the `Motion` springs (`response`, `transition`, `ease`, `overshoot`); `reducedMotion()` freezes
-  ambient motion (HUD rings, `ScanLine`). Pages slide in from the right and follow the predictive back gesture
+- Motion: sober and precise, 150–300 ms, only opacity, scale and offset; nothing bounces but the press. Tokens in
+  `Motion`: `quick` (fades, ~150 ms), `enter` (rows and chrome arriving, no bounce), `ease`, `overshoot` (the press),
+  `page` (screens). Helpers in `Surfaces.kt`: `listItem()` on every keyed lazy row, `Swap(state)` for either-or
+  content (loading / content / empty / error), `Appear(visible)` for chrome that comes and goes. `reducedMotion()`
+  (system animations off or battery saver, re-read on resume) freezes ambient motion (HUD rings, `ScanLine`, voice
+  bars) and leaves only fades. Pages slide in from the right and follow the predictive back gesture
   (`PredictiveBackLayer`: shrink to 90 %, round, lean with the finger), as do the bot room and the call; the sidebar
   uses Material's own predictive back.
 - Icons: Lucide, 1.5 stroke, generated into `ui/icons/AF.kt` by `scripts/lucide.py` (add a name there and
@@ -56,6 +66,17 @@ Outside Compose (widget, shortcut icons, notifications) the same palette lives i
 - **Actions**: `SettingsButton` (hairline pill; `prominent` = off-white fill) and `CapsuleIcon` (40×44 icon
   button; `selected` sits in a well). `PrimaryButton` only for the one main action of a form (login).
 - **Rows and cards**: `SettingsRow` with `IconWell`, `Card` (eyebrow title + surface card), `Divider`.
+- **States** (`ui/components/Controls.kt`): `Skeleton` while a list loads (ghost rows swept at the `ScanLine` rhythm),
+  `EmptyState(icon, title, hint, action)`, `ErrorState(text, onRetry)` (red mark, body text, always a retry when there
+  is one). Never a bare spinner or a line of grey text for these. `Refreshable` wraps a pageable list: pull down and the
+  scan line sweeps under the header.
+- **Feedback**: one notice for the whole app, `graph.notify(text, undo, commit)` (no `Toast`, no per-screen banners).
+  A change that can be taken back acts at once and offers Undo; what the host can't reverse goes in `commit`, sent only
+  once the Undo has gone (Pulse's Done and Not now). Sheets open their own window, above the notice: messages inside a
+  sheet stay in the sheet.
+- **Lists**: every keyed lazy row goes through `row(key)` / `rows(items, key)`, so it fades in and glides when the list
+  changes; rows trailing a growing reply use `glide = false`. Sidebar rows swipe: right pins, left archives (both stay
+  in the long-press menu).
 - **Live state**: `ScanLine` (a hairline with a sweeping light) while connecting or working; `HudPortrait`
   (portrait in thin rings that open with the voice level) for calls and the assistant; `CallStatus` for the
   call's state and timer in mono.

@@ -3,7 +3,6 @@
     <!-- Settings > Capabilities (skills, tools, connectors, plugins) and the AllFather host plugin page -->
     <string name="capabilities_cancel">Cancelar</string>
     <string name="capabilities_install">Instalar</string>
-    <string name="capabilities_retry">Reintentar</string>
     <string name="capabilities_enabled">Activado</string>
     <string name="capabilities_new_sessions">Los cambios se aplican a las sesiones nuevas.</string>
     <string name="capabilities_no_match">Nada coincide con «%1$s».</string>
@@ -166,7 +165,7 @@
     <string name="hostplugin_dashboard_down">El dashboard todavía no ha vuelto. Comprueba que Hermes funciona en el host.</string>
     <string name="hostplugin_cant_update">Este Hermes no puede actualizar plugins desde la app. Actualiza Hermes o usa los comandos de abajo.</string>
     <string name="hostplugin_not_applied">Hermes no aplicó la actualización.</string>
-    <string name="hostplugin_feature_artifacts">Artifacts (archivos, páginas y enlaces)</string>
+    <string name="hostplugin_feature_artifacts">Artefactos (archivos, páginas y enlaces)</string>
     <string name="hostplugin_feature_takeover">Tomar chats abiertos en Hermes Desktop</string>
     <string name="hostplugin_feature_voice_sessions">Llamadas de voz guardadas</string>
     <string name="hostplugin_feature_live_voice">Memoria, personalidad y búsqueda en voz en vivo</string>
@@ -183,11 +182,11 @@
     <string name="hostplugin_summary_restart">%1$s · Reinicia para terminar</string>
     <string name="hostplugin_summary_up_to_date">%1$s · Al día</string>
     <string name="hostplugin_title">Plugin de AllFather</string>
-    <string name="hostplugin_help">El plugin del host de Hermes da a la app artifacts, notificaciones, voz en vivo, llamadas de %1$s y más. Cada host de dashboard tiene su copia.</string>
+    <string name="hostplugin_help">El plugin del host de Hermes da a la app artefactos, notificaciones, voz en vivo, llamadas de %1$s y más. Cada host de dashboard tiene su copia.</string>
     <string name="hostplugin_version">Versión</string>
     <string name="hostplugin_status_checking">Comprobando el plugin de este dashboard…</string>
     <string name="hostplugin_status_not_served">Instalado en el host, pero el dashboard no lo sirve. Actívalo en Hermes y reinicia el gateway y el dashboard.</string>
-    <string name="hostplugin_status_missing">Falta o está desactualizado en el host, así que los artifacts y tomar chats de Hermes Desktop no funcionan.</string>
+    <string name="hostplugin_status_missing">Falta o está desactualizado en el host, así que los artefactos y tomar chats de Hermes Desktop no funcionan.</string>
     <string name="hostplugin_status_new_version">Hay una versión nueva: %1$s.</string>
     <string name="hostplugin_status_restart">El plugin nuevo ya está en el host. Hermes necesita reiniciarse para usarlo.</string>
     <string name="hostplugin_status_ok">Al día en el host de este dashboard.</string>

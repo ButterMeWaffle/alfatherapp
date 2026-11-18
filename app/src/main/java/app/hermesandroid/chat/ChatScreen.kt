@@ -1,5 +1,23 @@
 package app.hermesandroid.chat
 
+import app.hermesandroid.ui.theme.rise
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.animation.Crossfade
+import app.hermesandroid.ui.theme.resumeKey
+import app.hermesandroid.ui.theme.row
+import app.hermesandroid.ui.theme.rows
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.flow.drop
+import app.hermesandroid.ui.components.Pill
+import app.hermesandroid.ui.theme.Appear
+import app.hermesandroid.ui.theme.Swap
+import app.hermesandroid.ui.theme.reducedMotion
+import app.hermesandroid.ui.theme.Motion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -122,7 +140,7 @@ val LocalAvatars = androidx.compose.runtime.staticCompositionLocalOf<Map<String,
 private enum class Sheet { Model, Context, Agents, Gateway }
 
 @Composable
-fun ChatScreen(graph: AppGraph, onMenu: () -> Unit) {
+fun ChatScreen(graph: AppGraph, onMenu: () -> Unit, onComposer: (Dp) -> Unit = {}) {
     val s = graph.chat
     val c = C.colors
     // Home is a fresh chat: Back from a conversation returns there, from a fresh one it leaves the app.
@@ -145,8 +163,7 @@ fun ChatScreen(graph: AppGraph, onMenu: () -> Unit) {
             }.getOrNull()
         }
     }
-    val ctx = androidx.compose.ui.platform.LocalContext.current
-    LaunchedEffect(graph.readAloud.error) { graph.readAloud.error?.let { android.widget.Toast.makeText(ctx, it, android.widget.Toast.LENGTH_LONG).show(); graph.readAloud.error = null } }
+    LaunchedEffect(graph.readAloud.error) { graph.readAloud.error?.let { graph.notify(it); graph.readAloud.error = null } }
     LaunchedEffect(s.showModelPicker) { if (s.showModelPicker) { sheet = Sheet.Model; s.showModelPicker = false } }
     // Item count computed from state (layoutInfo lags a frame behind a fresh history load).
     val lead = (if (s.hasOlder) 1 else 0) + (if (s.offline) 1 else 0) + (if (s.messages.isEmpty() && !s.running) 1 else 0)
@@ -162,9 +179,14 @@ fun ChatScreen(graph: AppGraph, onMenu: () -> Unit) {
         snapshotFlow { list.canScrollForward to totalNow }.collect { (more, t) ->
             val ask = askAt
             if (!more || t == 0 || list.lastScrolledBackward || (ask >= 0 && list.firstVisibleItemIndex >= ask)) return@collect
-            if (ask >= 0) list.scrollToItem(ask) else list.scrollToItem(t - 1, Int.MAX_VALUE / 2)
+            if (ask >= 0) list.animateScrollToItem(ask) else list.scrollToItem(t - 1, Int.MAX_VALUE / 2)
         }
     }
+    val view = LocalView.current
+    LaunchedEffect(s) { snapshotFlow { s.answered }.drop(1).collect { Haptic.Success.perform(view) } }
+    // Read once here, not per row: the message list changes on every token, these only twice a turn.
+    val streamingKey by remember(s) { derivedStateOf { if (s.running) s.messages.lastOrNull()?.key else null } }
+    val opensTurn by remember(s) { derivedStateOf { s.messages.filterIndexed { i, _ -> i == 0 || s.messages[i - 1].role == Role.User }.mapTo(HashSet()) { it.key } } }
     CompositionLocalProvider(LocalGatewayFiles provides files, LocalAvatars provides graph.avatars) {
         Box(Modifier.fillMaxSize()) {
             Backdrop(Modifier.fillMaxSize())
@@ -178,33 +200,34 @@ fun ChatScreen(graph: AppGraph, onMenu: () -> Unit) {
                         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 18.dp),
                         verticalArrangement = Arrangement.spacedBy(18.dp),
                     ) {
-                        if (s.hasOlder) item(key = "older") {
+                        if (s.hasOlder) row("older") {
                             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                                 if (s.loadingOlder) CircularProgressIndicator(Modifier.size(18.dp), color = c.accent, strokeWidth = 2.dp)
                                 else SettingsButton(stringResource(R.string.chatscreen_load_older)) { s.loadOlder() }
                             }
                         }
-                        if (s.offline) item(key = "offline") { StatusLine(stringResource(R.string.chatscreen_offline), c.secondary, AF.Sync) }
-                        if (s.messages.isEmpty() && !s.running) item(key = "empty") { EmptyChat(s.agentName) }
+                        if (s.offline) row("offline") { StatusLine(stringResource(R.string.chatscreen_offline), c.secondary, AF.Sync) }
+                        if (s.messages.isEmpty() && !s.running) row("empty") { EmptyChat(s.agentName) { s.draft = it } }
                         // The agent's name heads a turn once; tool steps split a turn into several replies.
-                        itemsIndexed(s.messages, key = { _, m -> m.key }) { i, m -> MessageItem(s, m, s.chatProfile ?: graph.profile, opensTurn = i == 0 || s.messages[i - 1].role == Role.User) }
-                        s.pendingSend?.let { text -> item(key = "pending") { PendingBubble(text) { s.cancelPendingSend() } } }
-                        if (s.takeoverOffered) item(key = "takeover") {
+                        rows(s.messages, key = { it.key }) { m -> MessageItem(s, m, s.chatProfile ?: graph.profile, opensTurn = m.key in opensTurn, streaming = m.key == streamingKey) }
+                        s.pendingSend?.let { text -> row("pending", glide = false) { PendingBubble(text) { s.cancelPendingSend() } } }
+                        if (s.takeoverOffered) row("takeover") {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { SettingsButton(stringResource(R.string.chatscreen_take_over), prominent = true) { s.takeOver() } }
                         }
-                        if (s.running) item(key = "working") { WorkingLine(s.chatProfile ?: graph.profile, s.turnStartedAt, s.messages.lastOrNull(), s.statusText, graph.profiles) }
-                        else s.statusText?.let { item(key = "status") { StatusLine(it, c.secondary, AF.Sync) } }
+                        if (s.running) row("working", glide = false) { WorkingLine(s.chatProfile ?: graph.profile, s.turnStartedAt, s.messages.lastOrNull(), s.statusText, graph.profiles) }
+                        else s.statusText?.let { row("status", glide = false) { StatusLine(it, c.secondary, AF.Sync) } }
                     }
-                    if (!atBottom) {
+                    Appear(!atBottom, Modifier.align(Alignment.BottomEnd), resize = false) {
                         Box(
-                            Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 14.dp)
+                            Modifier.padding(end = 18.dp, bottom = 14.dp)
                                 .size(42.dp).glass(CircleShape)
                                 .pressable(label = stringResource(R.string.chatscreen_scroll_end)) { scope.launch { list.animateScrollToItem(list.layoutInfo.totalItemsCount - 1, Int.MAX_VALUE / 2) } },
                             contentAlignment = Alignment.Center,
                         ) { Icon(AF.ArrowDownward, null, tint = c.text, modifier = Modifier.size(17.dp)) }
                     }
                 }
-                Column(Modifier.navigationBarsPadding().imePadding()) {
+                val density = LocalDensity.current
+                Column(Modifier.navigationBarsPadding().imePadding().animateContentSize(Motion.enter()).onSizeChanged { onComposer(with(density) { it.height.toDp() }) }) {
                     s.requests.forEach { RequestCard(s, it) }
                     graph.phone.changes.open.forEach { PhoneChangeCard(graph, it) }
                     Composer(s, s.chatProfile ?: graph.profile, onModel = { sheet = Sheet.Model }, onContext = { sheet = Sheet.Context }, onAgents = { sheet = Sheet.Agents })
@@ -234,20 +257,25 @@ private fun ChatTopBar(s: ChatState, profile: String, connected: Boolean, error:
         Avatar(profile, size = 30.dp, image = LocalAvatars.current[profile])
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(s.title, style = CType.headline, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Swap(s.title) { Text(it, style = CType.headline, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             // The model lives in the composer (as in Claude's app); the bar only speaks up when the link is down.
-            when {
-                connected -> {}
-                error == null -> StatusLine(stringResource(R.string.chatscreen_reconnecting), c.orange, AF.Sync)
-                else -> StatusLine(stringResource(R.string.chatscreen_disconnected), c.red, AF.WifiOff)
+            Appear(!connected) {
+                Swap(error == null) { reconnecting ->
+                    if (reconnecting) Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        StatusLine(stringResource(R.string.chatscreen_reconnecting), c.orange, AF.Sync)
+                        ScanLine(Modifier.width(96.dp))
+                    } else StatusLine(stringResource(R.string.chatscreen_disconnected), c.red, AF.WifiOff)
+                }
             }
         }
-        if (s.messages.isNotEmpty()) Box(Modifier.size(44.dp).pressable(label = stringResource(R.string.chatscreen_new_chat), haptic = Haptic.Light) { s.openNew() }, contentAlignment = Alignment.Center) {
-            Icon(AF.Compose, stringResource(R.string.chatscreen_new_chat), tint = c.text, modifier = Modifier.size(20.dp))
+        Appear(s.messages.isNotEmpty()) {
+            Box(Modifier.size(44.dp).pressable(label = stringResource(R.string.chatscreen_new_chat), haptic = Haptic.Light) { s.openNew() }, contentAlignment = Alignment.Center) {
+                Icon(AF.Compose, stringResource(R.string.chatscreen_new_chat), tint = c.text, modifier = Modifier.size(20.dp))
+            }
         }
         Box {
             Box(Modifier.size(44.dp).pressable(label = stringResource(R.string.chatscreen_more)) { menu = true }, contentAlignment = Alignment.Center) {
-                Icon(AF.MoreHoriz, null, tint = c.text, modifier = Modifier.size(20.dp))
+                Icon(AF.MoreHoriz, stringResource(R.string.chatscreen_more_options), tint = c.text, modifier = Modifier.size(20.dp))
             }
             DropdownMenu(menu, { menu = false }) {
                 DropdownMenuItem({ Text(stringResource(R.string.chatscreen_delegated_agents)) }, { menu = false; onAgents() }, leadingIcon = { Icon(AF.Group, null) })
@@ -261,10 +289,14 @@ private fun ChatTopBar(s: ChatState, profile: String, connected: Boolean, error:
     }
 }
 
+/** Starters under the greeting: they fill the composer (never send), so they can be edited first. */
+private val STARTERS = listOf(R.string.chatscreen_starter_pulse, R.string.chatscreen_starter_tasks, R.string.chatscreen_starter_plan)
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun EmptyChat(name: String) {
+private fun EmptyChat(name: String, onStarter: (String) -> Unit) {
     val c = C.colors
-    val greeting = stringResource(remember {
+    val greeting = stringResource(remember(resumeKey()) {
         when (java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) { in 5..11 -> R.string.chatscreen_good_morning; in 12..18 -> R.string.chatscreen_good_afternoon; else -> R.string.chatscreen_good_evening }
     })
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -277,14 +309,26 @@ private fun EmptyChat(name: String) {
         Eyebrow(greeting)
         Text(stringResource(R.string.chatscreen_empty_title), style = CType.largeTitle, color = c.text)
         Text(stringResource(R.string.chatscreen_empty_ready, name), style = CType.subheadline, color = c.secondary)
+        Spacer(Modifier.height(14.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            STARTERS.forEachIndexed { i, res ->
+                val text = stringResource(res)
+                // One after the other, 40 ms apart, rising 8 dp; only a fade under reduced motion.
+                val shown = remember { Animatable(0f) }
+                LaunchedEffect(Unit) { delay(160L + 40L * i); shown.animateTo(1f, Motion.enter()) }
+                Box(Modifier.rise { shown.value }) {
+                    Pill(text, selected = false) { onStarter(text) }
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun MessageItem(s: ChatState, m: ChatMsg, profile: String, opensTurn: Boolean) {
+private fun MessageItem(s: ChatState, m: ChatMsg, profile: String, opensTurn: Boolean, streaming: Boolean) {
     when (m.role) {
         Role.User -> UserBubble(s, m)
-        Role.Assistant -> AssistantMessage(s, m, profile, opensTurn)
+        Role.Assistant -> AssistantMessage(s, m, profile, opensTurn, streaming)
         Role.Tool -> if (isCardTool(m.toolName) && m.done && cardsOf(m).isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { cardsOf(m).forEach { RichCard(it) } }
         } else StepCard(m, remember(m.args, s.graph.profiles.size) { consultOf(m.args, s.graph.profiles) })
@@ -312,7 +356,14 @@ private fun UserBubble(s: ChatState, m: ChatMsg) {
     val shape = BubbleShape
     val steer = m.toolName == ChatState.STEER_MARK
     var menu by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(start = 40.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    val still = reducedMotion()
+    // ponytail: "just sent" = stamped in the last 1.5 s; a history reload inside that window replays the rise (harmless).
+    val rise = remember { Animatable(if (!still && System.currentTimeMillis() - m.time < 1500) 1f else 0f) }
+    if (rise.value != 0f) LaunchedEffect(Unit) { rise.animateTo(0f, Motion.enter()) }
+    Column(
+        Modifier.fillMaxWidth().padding(start = 40.dp).rise { 1f - rise.value },
+        horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         Box {
             Box(
                 Modifier
@@ -330,8 +381,8 @@ private fun UserBubble(s: ChatState, m: ChatMsg) {
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             m.reaction?.let { Text(it, fontSize = 15.sp) }
-            if (m.time > 0) Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(m.time)), style = CType.data, color = c.tertiary)
-            Icon(AF.ContentCopy, stringResource(R.string.chatscreen_copy), tint = c.secondary, modifier = Modifier.size(14.dp).pressable(haptic = Haptic.Light) { clipboard.setText(AnnotatedString(m.text)) })
+            if (m.time > 0) Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(m.time)), style = CType.data, color = c.secondary)
+            CopyAction(m.text, box = 24.dp, icon = 14.dp)
         }
     }
 }
@@ -350,41 +401,56 @@ private fun MessageMenu(open: Boolean, onDismiss: () -> Unit, s: ChatState, m: C
 }
 
 @Composable
-private fun AssistantMessage(s: ChatState, m: ChatMsg, profile: String, opensTurn: Boolean) {
+private fun AssistantMessage(s: ChatState, m: ChatMsg, profile: String, opensTurn: Boolean, streaming: Boolean) {
     val c = C.colors
-    val clipboard = LocalClipboardManager.current
-    var copied by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
-    LaunchedEffect(copied) { if (copied) { delay(1400); copied = false } }
     // Phone-control steps (```acciones) are for the app, not the user: show only what Allfather says.
     val say = remember(m.text) { app.hermesandroid.control.parseReply(m.text).say }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (opensTurn) Eyebrow(profileTitle(profile))
-        if (m.reasoning.isNotBlank()) ThinkingCard(m.reasoning)
+        if (m.reasoning.isNotBlank()) ThinkingCard(m.reasoning, live = streaming && say.isBlank())
         if (say.isNotBlank()) {
             ReplyBody(say)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            // Hidden while the text still grows (it would ride down with it); it settles in once the answer is complete.
+            Appear(!streaming) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                 m.reaction?.let { Text(it, fontSize = 16.sp, modifier = Modifier.padding(end = 6.dp)) }
                 Box {
                     ActionIcon(AF.AddReaction, stringResource(R.string.chatscreen_react)) { menu = true }
                     MessageMenu(menu, { menu = false }, s, m)
                 }
-                ActionIcon(if (copied) AF.Check else AF.ContentCopy, stringResource(R.string.chatscreen_copy), if (copied) c.accent else c.secondary) { clipboard.setText(AnnotatedString(say)); copied = true }
+                CopyAction(say)
                 val ra = s.graph.readAloud
                 val reading = ra.current == m.key.toString()
-                if (reading && ra.loading) Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) { androidx.compose.material3.CircularProgressIndicator(Modifier.size(14.dp), color = c.accent, strokeWidth = 2.dp) }
+                if (reading && ra.loading) Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { androidx.compose.material3.CircularProgressIndicator(Modifier.size(14.dp), color = c.accent, strokeWidth = 2.dp) }
                 else ActionIcon(if (reading) AF.Stop else AF.VolumeUp, stringResource(if (reading) R.string.chatscreen_stop_reading else R.string.chatscreen_read_aloud), if (reading) c.accent else c.secondary) { ra.toggle(m.key.toString(), say) }
                 ActionIcon(AF.FormatQuote, stringResource(R.string.chatscreen_quote)) { s.quote(say) }
                 ActionIcon(AF.ForkRight, stringResource(R.string.chatscreen_branch)) { s.branchFrom(m) }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ActionIcon(icon: ImageVector, label: String, tint: Color = C.colors.secondary, onClick: () -> Unit) {
-    Box(Modifier.size(34.dp).pressable(label = label, haptic = Haptic.Light, onClick = onClick), contentAlignment = Alignment.Center) {
-        Icon(icon, label, tint = tint, modifier = Modifier.size(16.dp))
+private fun ActionIcon(icon: ImageVector, label: String, tint: Color = C.colors.secondary, box: Dp = 40.dp, size: Dp = 16.dp, onClick: () -> Unit) {
+    // 40 dp like CapsuleIcon: the icons sit side by side, so Compose cannot widen their touch area past each other.
+    Box(Modifier.size(box).pressable(label = label, haptic = Haptic.Light, onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(icon, label, tint = tint, modifier = Modifier.size(size))
+    }
+}
+
+/** Copy, then a check in the accent for 1.4 s: the one action icon that answers back. */
+@Composable
+private fun CopyAction(text: String, box: Dp = 40.dp, icon: Dp = 16.dp) {
+    val c = C.colors
+    val clipboard = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) { if (copied) { delay(1400); copied = false } }
+    Crossfade(copied, animationSpec = Motion.quick(), label = "copy") { done ->
+        ActionIcon(if (done) AF.Check else AF.ContentCopy, stringResource(if (done) R.string.chatscreen_copied else R.string.chatscreen_copy), if (done) c.accent else c.secondary, box, icon) {
+            clipboard.setText(AnnotatedString(text)); copied = true
+        }
     }
 }
 
@@ -417,7 +483,7 @@ private fun WorkingLine(profile: String, since: Long, last: ChatMsg?, status: St
             Text(phrase.lowercase(), style = CType.data.copy(fontSize = CType.footnote.fontSize), color = c.secondary, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (since > 0) {
                 val secs = ((now - since) / 1000).coerceAtLeast(0)
-                Text("%d:%02d".format(secs / 60, secs % 60), style = CType.data, color = c.tertiary)
+                Text("%d:%02d".format(secs / 60, secs % 60), style = CType.data, color = c.secondary)
             }
         }
         ScanLine(Modifier.fillMaxWidth())
@@ -477,7 +543,7 @@ private fun StepCard(m: ChatMsg, consult: Consult? = null) {
     val c = C.colors
     val style = toolStyle(m.toolName, c)
     var open by rememberSaveable(m.key) { mutableStateOf(false) }
-    val angle by animateFloatAsState(if (open) 180f else 0f, label = "chev")
+    val angle by animateFloatAsState(if (open) 180f else 0f, Motion.ease(), label = "chev")
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
         // The rail reaches half the list's 18 dp gap past each edge, so consecutive steps read as one line.
         Box(Modifier.width(20.dp).fillMaxHeight().drawBehind {
@@ -487,7 +553,7 @@ private fun StepCard(m: ChatMsg, consult: Consult? = null) {
             drawCircle(c.canvas, 4.5.dp.toPx(), node)
             if (m.done) drawCircle(c.secondary, 3.dp.toPx(), node, style = Stroke(1.dp.toPx())) else drawCircle(c.text, 3.dp.toPx(), node)
         })
-        Column(Modifier.weight(1f).pressable(haptic = Haptic.Light) { open = !open }.animateContentSize()) {
+        Column(Modifier.weight(1f).pressable(haptic = Haptic.Light) { open = !open }.animateContentSize(Motion.ease())) {
             Row(Modifier.heightIn(min = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (consult == null) Icon(style.icon, null, tint = c.secondary, modifier = Modifier.size(14.dp))
                 else Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { consult.bots.forEach { Avatar(it, 18.dp, image = LocalAvatars.current[it]) } }
@@ -496,10 +562,12 @@ private fun StepCard(m: ChatMsg, consult: Consult? = null) {
                     consult?.let { if (m.done) it.title else it.running } ?: if (m.done) m.text.ifBlank { style.title } else style.running,
                     style = CType.subheadline, color = if (consult != null) c.text else c.secondary, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                if (!m.done) CircularProgressIndicator(Modifier.size(12.dp), color = c.text, strokeWidth = 1.5.dp)
-                else Icon(AF.ExpandMore, null, tint = c.tertiary, modifier = Modifier.size(15.dp).rotate(angle))
+                Swap(m.done, contentAlignment = Alignment.Center) { done ->
+                    if (!done) CircularProgressIndicator(Modifier.size(12.dp), color = c.text, strokeWidth = 1.5.dp)
+                    else Icon(AF.ExpandMore, null, tint = c.tertiary, modifier = Modifier.size(15.dp).rotate(angle))
+                }
             }
-            if (m.toolName.isNotBlank() && consult == null) Text(m.toolName, style = CType.data, color = c.tertiary, modifier = Modifier.padding(start = 22.dp), maxLines = 1)
+            if (m.toolName.isNotBlank() && consult == null) Text(m.toolName, style = CType.data, color = c.secondary, modifier = Modifier.padding(start = 22.dp), maxLines = 1)
             if (open) Column(Modifier.padding(start = 22.dp, top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 RawBox(prettyArgs(m.args))
                 if (m.result.isNotBlank()) ResultView(m.result)
@@ -546,17 +614,19 @@ private fun RawBox(text: String) {
 }
 
 @Composable
-private fun ThinkingCard(text: String) {
+private fun ThinkingCard(text: String, live: Boolean) {
     val c = C.colors
     var open by remember { mutableStateOf(false) }
-    val angle by animateFloatAsState(if (open) 180f else 0f, label = "chev")
-    Column(Modifier.fillMaxWidth().pressable(haptic = Haptic.Light) { open = !open }.animateContentSize()) {
+    val angle by animateFloatAsState(if (open) 180f else 0f, Motion.ease(), label = "chev")
+    Column(Modifier.fillMaxWidth().pressable(haptic = Haptic.Light) { open = !open }.animateContentSize(Motion.ease())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(AF.Pending, null, tint = c.tertiary, modifier = Modifier.size(14.dp))
             Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.chatscreen_thought), style = CType.data.copy(fontSize = CType.footnote.fontSize), color = c.tertiary, modifier = Modifier.weight(1f))
+            Swap(live, Modifier.weight(1f)) { Text(stringResource(if (it) R.string.chatscreen_thinking_live else R.string.chatscreen_thought), style = CType.data.copy(fontSize = CType.footnote.fontSize), color = c.secondary) }
             Icon(AF.ExpandMore, null, tint = c.tertiary, modifier = Modifier.size(15.dp).rotate(angle))
         }
+        // While the reasoning streams in, the card says so: the same sweep as the working line.
+        Appear(live && !open) { ScanLine(Modifier.padding(start = 22.dp, top = 6.dp).width(72.dp)) }
         if (open) Text(text, style = CType.callout, color = c.secondary, modifier = Modifier.padding(start = 22.dp, top = 8.dp))
     }
 }
@@ -586,7 +656,7 @@ private fun RequestCard(s: ChatState, r: ServerRequest) {
     val c = C.colors
     val tint = if (r.method == "approval") c.attention else c.accent
     Column(
-        Modifier.padding(horizontal = 14.dp, vertical = 6.dp).fillMaxWidth().settingsCard(RoundedCornerShape(22.dp), tint = tint.copy(alpha = 0.08f)).padding(16.dp).animateContentSize(),
+        Modifier.padding(horizontal = 14.dp, vertical = 6.dp).fillMaxWidth().settingsCard(RoundedCornerShape(22.dp), tint = tint.copy(alpha = 0.08f)).padding(16.dp).animateContentSize(Motion.ease()),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         when (r.method) {
@@ -636,7 +706,7 @@ private fun PhoneChangeCard(graph: AppGraph, ch: app.hermesandroid.phone.PhoneCh
     val c = C.colors
     val changes = graph.phone.changes
     Column(
-        Modifier.padding(horizontal = 14.dp, vertical = 6.dp).fillMaxWidth().settingsCard(RoundedCornerShape(22.dp), tint = c.accent.copy(alpha = 0.08f)).padding(16.dp).animateContentSize(),
+        Modifier.padding(horizontal = 14.dp, vertical = 6.dp).fillMaxWidth().settingsCard(RoundedCornerShape(22.dp), tint = c.accent.copy(alpha = 0.08f)).padding(16.dp).animateContentSize(Motion.ease()),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -704,7 +774,7 @@ private fun ClarifyBody(s: ChatState, r: ServerRequest, tint: Color) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Icon(if (sel) AF.CheckCircle else AF.RadioButtonUnchecked, null, tint = if (sel) c.accent else c.tertiary, modifier = Modifier.size(18.dp))
+                Icon(if (sel) AF.CheckCircle else AF.RadioButtonUnchecked, null, tint = if (sel) c.accent else c.secondary, modifier = Modifier.size(18.dp))
                 Text(label, style = CType.subheadline, color = c.text)
             }
         }
@@ -734,10 +804,11 @@ private fun SecretBody(s: ChatState, r: ServerRequest, tint: Color) {
 @Composable
 private fun AnswerField(value: String, secret: Boolean, onChange: (String) -> Unit) {
     val c = C.colors
+    val hint = stringResource(R.string.chatscreen_type_answer)
     Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.text.copy(alpha = 0.05f)).padding(12.dp)) {
-        if (value.isEmpty()) Text(stringResource(R.string.chatscreen_type_answer), style = CType.body, color = c.tertiary)
+        if (value.isEmpty()) Text(hint, style = CType.body, color = c.secondary)
         BasicTextField(value, onChange, singleLine = secret, textStyle = CType.body.copy(color = c.text), cursorBrush = SolidColor(c.accent),
-            visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None, modifier = Modifier.fillMaxWidth())
+            visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None, modifier = Modifier.fillMaxWidth().semantics { contentDescription = hint })
     }
 }
 

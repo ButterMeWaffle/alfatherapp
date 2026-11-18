@@ -1,5 +1,10 @@
 package app.hermesandroid.chat
 
+import androidx.compose.runtime.DisposableEffect
+import app.hermesandroid.ui.theme.row
+import app.hermesandroid.ui.theme.rows
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -14,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +28,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Switch
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -83,6 +89,11 @@ private data class Provider(val slug: String, val title: String, val current: Bo
 @Composable
 fun AfSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
     val c = C.colors
+    val notices = app.hermesandroid.ui.components.LocalNotices.current
+    DisposableEffect(notices) {
+        notices?.let { it.sheets++ }
+        onDispose { notices?.let { it.sheets-- } }
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss, containerColor = c.surface, contentColor = c.text,
         shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
@@ -93,7 +104,18 @@ fun AfSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
                     .clip(androidx.compose.foundation.shape.CircleShape).background(c.text.copy(alpha = 0.22f)),
             )
         },
-    ) { content() }
+    ) {
+        // The notice over the sheet's foot: behind it, the scrim would hide it (the sheet is its own window).
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth()) {
+            androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth()) { content() }
+            notices?.let { n ->
+                app.hermesandroid.ui.components.NoticeBar(
+                    n.current, n::undo, n::settle,
+                    Modifier.align(androidx.compose.ui.Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -135,7 +157,7 @@ fun ModelPickerSheet(s: ChatState, onDismiss: () -> Unit) {
     AfSheet(onDismiss) {
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 640.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
             item { Text(stringResource(R.string.sheets_model), style = CType.headline, color = c.text, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) }
-            error?.let { item { Text(it, style = CType.footnote, color = c.red) } }
+            error?.let { item { app.hermesandroid.ui.components.ErrorState(it, inset = 0.dp) } }
             item {
                 SettingsGroup(stringResource(R.string.sheets_reasoning), AF.Psychology) {
                     Row(Modifier.horizontalScroll(rememberScrollState()).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -212,12 +234,16 @@ fun ModelPickerSheet(s: ChatState, onDismiss: () -> Unit) {
 @Composable
 private fun ToggleRow(title: String, detail: String, value: Boolean, onChange: (Boolean) -> Unit) {
     val c = C.colors
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().toggleable(value, interactionSource = null, indication = null, role = Role.Switch, onValueChange = onChange)
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Column(Modifier.weight(1f)) {
             Text(title, style = CType.callout.semibold(), color = c.text)
             Text(detail, style = CType.subheadline, color = c.text.copy(alpha = 0.58f))
         }
-        Switch(value, onChange, colors = SwitchDefaults.colors(checkedTrackColor = c.accent, checkedThumbColor = c.onAccent))
+        Switch(value, null, colors = SwitchDefaults.colors(checkedTrackColor = c.accent, checkedThumbColor = c.onAccent))
     }
 }
 
@@ -250,8 +276,9 @@ fun ContextSheet(s: ChatState, onDismiss: () -> Unit) {
             Text(stringResource(R.string.sheets_compress_info), style = CType.footnote, color = c.secondary)
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(c.text.copy(alpha = 0.06f)).padding(14.dp)) {
                 Box(Modifier.weight(1f)) {
-                    if (focus.isEmpty()) Text(stringResource(R.string.sheets_focus_hint), style = CType.body, color = c.tertiary)
-                    BasicTextField(focus, { focus = it }, textStyle = CType.body.copy(color = c.text), cursorBrush = SolidColor(c.accent), singleLine = true)
+                    val hint = stringResource(R.string.sheets_focus_hint)
+                    if (focus.isEmpty()) Text(hint, style = CType.body, color = c.secondary)
+                    BasicTextField(focus, { focus = it }, textStyle = CType.body.copy(color = c.text), cursorBrush = SolidColor(c.accent), singleLine = true, modifier = Modifier.semantics { contentDescription = hint })
                 }
             }
             SettingsButton(stringResource(R.string.sheets_compress_now), prominent = true) { s.compress(focus); onDismiss() }
@@ -285,7 +312,7 @@ fun SubagentsSheet(s: ChatState, onDismiss: () -> Unit) {
                 }
             }
             if (s.subagents.isEmpty()) item { Text(stringResource(R.string.sheets_no_agents), style = CType.subheadline, color = c.secondary) }
-            items(s.subagents, key = { it.id }) { a ->
+            rows(s.subagents, key = { it.id }) { a ->
                 var steer by remember(a.id) { mutableStateOf("") }
                 Column(Modifier.fillMaxWidth().settingsCard(RoundedCornerShape(22.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -300,8 +327,9 @@ fun SubagentsSheet(s: ChatState, onDismiss: () -> Unit) {
                     }
                     if (a.status == "running") Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.text.copy(alpha = 0.05f)).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.weight(1f).padding(vertical = 10.dp)) {
-                            if (steer.isEmpty()) Text(stringResource(R.string.sheets_steer_hint), style = CType.subheadline, color = c.tertiary)
-                            BasicTextField(steer, { steer = it }, textStyle = CType.subheadline.copy(color = c.text), cursorBrush = SolidColor(c.accent), singleLine = true)
+                            val hint = stringResource(R.string.sheets_steer_label)
+                            if (steer.isEmpty()) Text(stringResource(R.string.sheets_steer_hint), style = CType.subheadline, color = c.secondary)
+                            BasicTextField(steer, { steer = it }, textStyle = CType.subheadline.copy(color = c.text), cursorBrush = SolidColor(c.accent), singleLine = true, modifier = Modifier.semantics { contentDescription = hint })
                         }
                         Box(Modifier.size(40.dp).pressable(enabled = steer.isNotBlank()) { s.steerSubagent(a.id, steer); steer = "" }, contentAlignment = Alignment.Center) {
                             Icon(AF.Send, stringResource(R.string.sheets_send), tint = c.accent, modifier = Modifier.size(18.dp))

@@ -1,5 +1,6 @@
 package app.hermesandroid.voice
 
+import androidx.compose.runtime.FloatState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -101,12 +102,12 @@ fun LiveCallScreen(graph: AppGraph, onClose: () -> Unit) {
             LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 itemsIndexed(call.lines) { i, (user, text) ->
                     val latest = i == call.lines.lastIndex
-                    Text(text, style = CType.callout, color = if (latest) c.text else if (user) c.tertiary else c.secondary, modifier = Modifier.fillMaxWidth())
+                    Text(text, style = CType.callout, color = if (latest) c.text else if (user) c.secondary else c.accentSoft, modifier = Modifier.fillMaxWidth())
                 }
             }
             Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(36.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (call.active) RoundButton(if (call.muted) AF.MicOff else AF.Mic, stringResource(if (call.muted) R.string.livecallscreen_unmute else R.string.livecallscreen_mute), c.raised, c.text, 60.dp) { call.muted = !call.muted }
-                RoundButton(AF.CallEnd, stringResource(if (call.active) R.string.livecallscreen_hang_up else R.string.livecallscreen_close), c.red, c.text, 68.dp) { if (call.active) call.hangUp() else onClose() }
+                RoundButton(AF.CallEnd, stringResource(if (call.active) R.string.livecallscreen_hang_up else R.string.livecallscreen_close), c.red, c.onAccent, 68.dp) { if (call.active) call.hangUp() else onClose() }
             }
         }
     }
@@ -137,15 +138,24 @@ internal fun CallStatus(call: LiveCall, modifier: Modifier = Modifier, starting:
  * AllFather's profile in a circle with thin concentric HUD rings around it. The rings swell with [level] (read every
  * frame, smoothed) and their open arcs turn slowly while [live]; reduced motion keeps them still.
  */
+/** A voice level smoothed per frame (quick to rise, slow to fall), 0 when not [live] or under reduced motion.
+ *  Read it in a draw or layer block: it changes every frame. */
+@Composable
+internal fun rememberVoiceLevel(level: () -> Float, live: Boolean): FloatState {
+    val still = reducedMotion()
+    val smooth = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(live, still) {
+        if (!live || still) { smooth.floatValue = 0f; return@LaunchedEffect }
+        while (true) withFrameNanos { val l = level(); smooth.floatValue += (l - smooth.floatValue) * if (l > smooth.floatValue) 0.35f else 0.08f }
+    }
+    return smooth
+}
+
 @Composable
 internal fun HudPortrait(level: () -> Float, live: Boolean, modifier: Modifier = Modifier, size: Dp = 240.dp) {
     val c = C.colors
     val still = reducedMotion()
-    var smooth by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(live, still) {
-        if (!live || still) { smooth = 0f; return@LaunchedEffect }
-        while (true) withFrameNanos { smooth += (level() - smooth) * if (level() > smooth) 0.35f else 0.08f }
-    }
+    val smooth by rememberVoiceLevel(level, live)
     val spin = rememberInfiniteTransition(label = "hud").animateFloat(0f, 360f, infiniteRepeatable(tween(24_000, easing = LinearEasing)), label = "spin")
     Box(
         // Its own layer: the rings redraw every frame without re-recording the screen around them.
@@ -186,9 +196,9 @@ private fun RoundButton(icon: androidx.compose.ui.graphics.vector.ImageVector, l
 @Composable
 fun rememberVoiceAction(graph: AppGraph): () -> Unit {
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    fun begin() { graph.startVoice()?.let { android.widget.Toast.makeText(ctx, it, android.widget.Toast.LENGTH_LONG).show() } }
+    fun begin() { graph.startVoice()?.let { graph.notify(it) } }
     val permission = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) begin() else android.widget.Toast.makeText(ctx, app.hermesandroid.tr(R.string.livecallscreen_mic_needed, app.hermesandroid.ui.shell.defaultProfileTitle), android.widget.Toast.LENGTH_SHORT).show()
+        if (ok) begin() else graph.notify(app.hermesandroid.tr(R.string.livecallscreen_mic_needed, app.hermesandroid.ui.shell.defaultProfileTitle))
     }
     return {
         when {

@@ -129,7 +129,7 @@ class AssistPanel(private val context: Context, private val close: () -> Unit) {
             AssistHead(stringResource(R.string.assistpanel_assistant), close = close) { AppIconArt(44.dp) }
             if (heard.isNotBlank()) Text(stringResource(R.string.assistpanel_heard, heard), style = CType.subheadline, color = c.secondary)
             if (answer.isNotBlank()) Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) { ReplyBody(answer) }
-            if (status.isNotBlank()) Text(status, style = CType.footnote, color = c.tertiary)
+            if (status.isNotBlank()) Text(status, style = CType.footnote, color = c.secondary)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 val listening = graph.dictation.listening
                 Box(Modifier.size(56.dp).clip(CircleShape).background(if (listening) c.accent else c.raised)

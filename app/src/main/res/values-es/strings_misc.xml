@@ -452,4 +452,13 @@
     <string name="alertspage_battery_help" formatted="false">25 % o menos, sin cargar, y un evento en las próximas 2 horas.</string>
     <string name="alertspage_conflicts">Choques</string>
     <string name="alertspage_conflicts_help">Dos eventos que se cruzan en las próximas 24 horas.</string>
+    <string name="controls_loading">Cargando</string>
+    <string name="controls_error">Error</string>
+    <string name="controls_retry">Reintentar</string>
+    <string name="controls_undo">Deshacer</string>
+    <string name="shell_back_to_call">Volver a la llamada</string>
+    <string name="shell_talk">Hablar</string>
+    <string name="pulsepage_marked_done">Marcada como hecha</string>
+    <string name="pulsepage_back_to_pending">Vuelve a estar pendiente</string>
+    <string name="pulsepage_card_put_away">Tarjeta quitada</string>
 </resources>

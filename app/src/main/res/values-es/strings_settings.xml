@@ -20,7 +20,7 @@
     <string name="settingsscreen_title">Ajustes</string>
     <string name="settingsscreen_plugin_update_title">Actualiza el plugin de AllFather</string>
     <string name="settingsscreen_plugin_not_served">Instalado en el host, pero el dashboard no lo sirve. Actívalo en Hermes y reinicia el gateway y el dashboard.</string>
-    <string name="settingsscreen_plugin_missing">Falta o está desactualizado en el host, así que los artifacts y tomar chats de Hermes Desktop no funcionan.</string>
+    <string name="settingsscreen_plugin_missing">Falta o está desactualizado en el host, así que los artefactos y tomar chats de Hermes Desktop no funcionan.</string>
     <string name="settingsscreen_plugin_restart">El plugin de AllFather se actualizó y Hermes necesita reiniciarse para usarlo.</string>
     <string name="settingsscreen_plugin_update">Hay un plugin de AllFather más nuevo para tu Hermes. La app puede actualizarlo.</string>
     <string name="settingsscreen_plugin_open">Abrir plugin de AllFather</string>
@@ -47,6 +47,8 @@
     <string name="settingsscreen_dashboards">Dashboards guardados</string>
     <string name="settingsscreen_dashboards_detail">%1$d · añadir o cambiar</string>
     <string name="settingsscreen_sign_out">Cerrar sesión</string>
+    <string name="settingsscreen_sign_out_title">¿Cerrar sesión en %1$s?</string>
+    <string name="settingsscreen_sign_out_text">Para volver a usar la app tendrás que iniciar sesión otra vez en este dashboard.</string>
     <string name="settingsscreen_about">Acerca de</string>
     <string name="settingsscreen_app_name">AllFather para Android</string>
     <string name="settingsscreen_version">Versión %1$s</string>
@@ -194,7 +196,6 @@
     <string name="configpages_fast_mode_help">Cuándo pide Hermes prioridad al proveedor, en los modelos que la ofrecen.</string>
     <string name="configpages_context_window">Ventana de contexto</string>
     <string name="configpages_context_window_help">Sustituye la ventana del modelo principal, en tokens. 0 usa la del modelo.</string>
-    <string name="configpages_back">Volver</string>
     <string name="configpages_load_error">No se pudo leer la configuración: %1$s</string>
     <string name="configpages_save_error">No se pudo guardar: %1$s</string>
     <string name="configpages_saving">Guardando…</string>

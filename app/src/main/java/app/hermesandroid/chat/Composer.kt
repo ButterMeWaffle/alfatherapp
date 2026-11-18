@@ -1,5 +1,17 @@
 package app.hermesandroid.chat
 
+import app.hermesandroid.ui.theme.AppearWith
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.graphics.graphicsLayer
+import app.hermesandroid.ui.theme.Appear
+import app.hermesandroid.ui.theme.Motion
+import app.hermesandroid.ui.theme.reducedMotion
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -53,6 +65,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -91,13 +105,15 @@ fun Composer(s: ChatState, profile: String, onModel: () -> Unit, onContext: () -
 
     Column {
         val slashQuery = s.draft.takeIf { it.startsWith("/") && ' ' !in it }?.drop(1)?.lowercase()
-        if (slashQuery != null) SlashPopover(s.slashCommands.filter { it.name.startsWith(slashQuery) }) { s.draft = "/${it.name} " }
+        AppearWith(slashQuery) { q -> SlashPopover(s.slashCommands.filter { it.name.startsWith(q) }) { s.draft = "/${it.name} " } }
         ComposerCard {
-            if (s.attachments.isNotEmpty() || s.council) AttachmentStrip(s)
+            Appear(s.attachments.isNotEmpty() || s.council) { AttachmentStrip(s) }
             Row(verticalAlignment = Alignment.Top) {
                 ComposerField(s.draft, { s.draft = it }, stringResource(R.string.composer_message_to, profileTitle(profile)), Modifier.weight(1f))
-                if (s.draft.lines().size > 3) Box(Modifier.padding(top = 4.dp).size(40.dp).pressable(label = stringResource(R.string.composer_full_editor)) { fullEditor = true }, contentAlignment = Alignment.Center) {
-                    Icon(AF.OpenInFull, null, tint = c.secondary, modifier = Modifier.size(14.dp))
+                Appear(s.draft.lines().size > 3) {
+                    Box(Modifier.padding(top = 4.dp).size(40.dp).pressable(label = stringResource(R.string.composer_full_editor)) { fullEditor = true }, contentAlignment = Alignment.Center) {
+                        Icon(AF.OpenInFull, null, tint = c.secondary, modifier = Modifier.size(14.dp))
+                    }
                 }
             }
             ComposerBar {
@@ -174,10 +190,11 @@ private fun DictateButton(s: ChatState) {
     fun go() = d.toggle(s.draft) { s.draft = it }
     val micNeeded = stringResource(R.string.composer_mic_needed)
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> if (ok) go() else d.error = micNeeded }
-    androidx.compose.runtime.LaunchedEffect(d.error) { d.error?.let { android.widget.Toast.makeText(ctx, it, android.widget.Toast.LENGTH_SHORT).show(); d.error = null } }
+    androidx.compose.runtime.LaunchedEffect(d.error) { d.error?.let { s.graph.notify(it); d.error = null } }
     val active = d.listening || d.transcribing
     Box(contentAlignment = Alignment.Center) {
-        if (d.listening) Box(Modifier.size((38 + 10 * d.level).dp).clip(CircleShape).background(c.accent.copy(alpha = 0.18f)))
+        val level = app.hermesandroid.voice.rememberVoiceLevel({ d.level }, d.listening)
+        if (d.listening) Box(Modifier.size(38.dp).graphicsLayer { val k = 1f + 10f * level.floatValue / 38f; scaleX = k; scaleY = k }.clip(CircleShape).background(c.accent.copy(alpha = 0.18f)))
         if (d.transcribing) androidx.compose.material3.CircularProgressIndicator(Modifier.size(38.dp), color = c.accent, strokeWidth = 2.dp)
         ToolCircle(if (d.listening) AF.Stop else AF.Mic, stringResource(if (d.listening) R.string.composer_stop_dictation else R.string.composer_dictate), tint = if (active) c.accent else c.text) {
             if (d.transcribing) return@ToolCircle
@@ -256,7 +273,8 @@ internal fun ComposerField(value: String, onValue: (String) -> Unit, placeholder
             textStyle = chatTextStyle().copy(color = c.text),
             cursorBrush = SolidColor(c.accent),
             maxLines = 8,
-            modifier = Modifier.fillMaxWidth(),
+            // The placeholder is a sibling Text, not part of the field: name the field for TalkBack.
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = placeholder },
         )
     }
 }
@@ -301,13 +319,11 @@ private fun MainButton(s: ChatState) {
     var menu by remember { mutableStateOf(false) }
     val hasText = s.draft.isNotBlank() || s.attachments.isNotEmpty()
     val blocked = s.runtimeId == null && s.pendingSend != null
-    if (!s.running && !hasText && !blocked) {
-        VoiceButton(onClick = app.hermesandroid.voice.rememberVoiceAction(s.graph), live = s.graph.liveCall.active, size = BarItem)
-        return
-    }
     val stopping = s.running && !hasText
     data class A(val icon: ImageVector, val label: String, val run: () -> Unit)
-    val a = when {
+    // null = the voice button. Keyed by label below, so a new lambda each recomposition doesn't replay the morph.
+    val action = when {
+        !s.running && !hasText && !blocked -> null
         stopping -> A(AF.Stop, stringResource(R.string.composer_stop)) { s.stop() }
         s.running -> when (s.busyAction) {
             BusyAction.Queue -> A(AF.Queue, stringResource(R.string.composer_queue)) { s.send(BusyAction.Queue) }
@@ -317,10 +333,20 @@ private fun MainButton(s: ChatState) {
         blocked -> A(AF.Lock, stringResource(R.string.composer_unavailable)) {}
         else -> A(AF.ArrowUpward, stringResource(R.string.composer_send)) { focus.clearFocus(); s.send() }
     }
-    Box {
-        ToolCircle(a.icon, a.label, main = !stopping, enabled = !blocked, onLongClick = if (s.running && hasText) ({ menu = true }) else null, onClick = a.run)
-        DropdownMenu(menu, { menu = false }) {
-            BusyAction.entries.forEach { b -> DropdownMenuItem({ Text(stringResource(b.label)) }, { menu = false; s.send(b) }) }
+    val from = if (reducedMotion()) 1f else 0.8f
+    AnimatedContent(
+        action, contentKey = { it?.label }, label = "main",
+        transitionSpec = { (fadeIn(Motion.quick()) + scaleIn(Motion.enter(), from)) togetherWith (fadeOut(Motion.quick()) + scaleOut(Motion.quick(), from)) using SizeTransform(clip = false) },
+    ) { a ->
+        if (a == null) {
+            VoiceButton(onClick = app.hermesandroid.voice.rememberVoiceAction(s.graph), live = s.graph.liveCall.active, size = BarItem)
+            return@AnimatedContent
+        }
+        Box {
+            ToolCircle(a.icon, a.label, main = a.icon != AF.Stop, enabled = !blocked, onLongClick = if (s.running && hasText) ({ menu = true }) else null, onClick = a.run)
+            DropdownMenu(menu, { menu = false }) {
+                BusyAction.entries.forEach { b -> DropdownMenuItem({ Text(stringResource(b.label)) }, { menu = false; s.send(b) }) }
+            }
         }
     }
 }

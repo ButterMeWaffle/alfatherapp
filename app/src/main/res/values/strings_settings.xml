@@ -47,6 +47,8 @@
     <string name="settingsscreen_dashboards">Saved dashboards</string>
     <string name="settingsscreen_dashboards_detail">%1$d · add or switch</string>
     <string name="settingsscreen_sign_out">Sign out</string>
+    <string name="settingsscreen_sign_out_title">Sign out of %1$s?</string>
+    <string name="settingsscreen_sign_out_text">To use the app again you\'ll have to sign in to this dashboard again.</string>
     <string name="settingsscreen_about">About</string>
     <string name="settingsscreen_app_name">AllFather for Android</string>
     <string name="settingsscreen_version">Version %1$s</string>
@@ -194,7 +196,6 @@
     <string name="configpages_fast_mode_help">When Hermes asks the provider for priority, on models that offer it.</string>
     <string name="configpages_context_window">Context window</string>
     <string name="configpages_context_window_help">Overrides the main model\'s window, in tokens. 0 uses the model\'s.</string>
-    <string name="configpages_back">Back</string>
     <string name="configpages_load_error">Couldn\'t read the configuration: %1$s</string>
     <string name="configpages_save_error">Couldn\'t save: %1$s</string>
     <string name="configpages_saving">Saving…</string>

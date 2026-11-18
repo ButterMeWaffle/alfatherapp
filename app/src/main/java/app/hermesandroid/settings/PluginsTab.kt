@@ -1,5 +1,7 @@
 package app.hermesandroid.settings
 
+import app.hermesandroid.ui.components.Skeleton
+import app.hermesandroid.ui.components.ErrorState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,14 +45,14 @@ fun PluginsTab(graph: AppGraph, s: CapabilitiesState, q: String) {
     var pendingInstall by remember { mutableStateOf<PluginEntry?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(s.profile) { if (!s.pluginsLoaded) s.loadPlugins() }
-    if (!s.pluginsLoaded) { Loading(); return }
-    s.pluginsError?.let { Text(it, style = CType.footnote, color = c.red); SettingsButton(stringResource(R.string.capabilities_retry)) { scope.launch { s.loadPlugins() } }; return }
+    if (!s.pluginsLoaded) { Skeleton(); return }
+    s.pluginsError?.let { ErrorState(it) { scope.launch { s.loadPlugins() } }; return }
     if (s.pluginsNeedRestart) RestartCard(graph)
     if (!s.canManagePlugins) Help(stringResource(R.string.pluginstab_default_profile_only))
     message?.let { Text(it, style = CType.footnote, color = c.secondary) }
     val installed = s.plugins.filter { q.isEmpty() || it.name.contains(q, true) || it.description.contains(q, true) }
     CapSection(stringResource(R.string.pluginstab_installed), stringResource(R.string.pluginstab_installed_footer)) {
-        if (installed.isEmpty()) Empty(if (q.isEmpty()) stringResource(R.string.pluginstab_none_installed) else stringResource(R.string.capabilities_no_match, q))
+        if (installed.isEmpty()) Empty(stringResource(R.string.pluginstab_none_installed), q)
         installed.forEachIndexed { i, p ->
             val pills = buildList {
                 when (p.source) { "bundled" -> add(stringResource(R.string.pluginstab_bundled) to null); "git" -> add("Git" to null); "user" -> add("Local" to null) }
@@ -60,7 +62,7 @@ fun PluginsTab(graph: AppGraph, s: CapabilitiesState, q: String) {
             }
             CapRow(p.name, p.description, i == 0, pills, onClick = { open = p.name }) {
                 if (s.pluginBusy[p.name] == true) CircularProgressIndicator(Modifier.size(18.dp), color = c.accent, strokeWidth = 2.dp)
-                else CapSwitch(p.enabled, enabled = s.canManagePlugins) { on -> scope.launch { runCatching { s.setPluginEnabled(p, on) }.onFailure { message = tr(R.string.capabilities_change_failed, it.message.orEmpty()) } } }
+                else CapSwitch(p.enabled, p.name, enabled = s.canManagePlugins) { on -> scope.launch { runCatching { s.setPluginEnabled(p, on) }.onFailure { message = tr(R.string.capabilities_change_failed, it.message.orEmpty()) } } }
             }
         }
     }

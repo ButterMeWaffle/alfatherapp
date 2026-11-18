@@ -1,5 +1,13 @@
 package app.hermesandroid.settings
 
+import app.hermesandroid.ui.shell.ScrollRule
+import app.hermesandroid.ui.shell.rememberPageList
+import app.hermesandroid.ui.components.EmptyState
+import app.hermesandroid.ui.components.Skeleton
+import app.hermesandroid.ui.components.Refreshable
+import app.hermesandroid.ui.theme.row
+import app.hermesandroid.ui.theme.rows
+import app.hermesandroid.ui.components.ErrorState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -8,7 +16,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -123,16 +130,36 @@ class PulseFeed(private val graph: AppGraph) {
         runCatching { client.rest("POST", "$BASE/feed/seen", buildJsonObject { put("ids", JsonNull) }) }
     }
 
-    suspend fun rate(card: PulseCard, up: Boolean) = act("rate", card) { put("rating", if (up) "up" else "down") }
-    suspend fun done(card: PulseCard, done: Boolean) = act("done", card) { put("done", done) }
-    suspend fun dismiss(card: PulseCard) = act("dismiss", card) { put("dismissed", true) }
+    /** The thumb lights up at once; the host confirms behind it. */
+    fun rate(card: PulseCard, up: Boolean) {
+        val rating = if (up) "up" else "down"
+        show(card) { it.copy(rating = rating) }
+        graph.scope.launch { act("rate", card) { put("rating", rating) } }
+    }
 
+    fun done(card: PulseCard) = later(card, app.hermesandroid.tr(if (card.done) R.string.pulsepage_back_to_pending else R.string.pulsepage_marked_done), { it.copy(done = !card.done) }) {
+        act("done", card) { put("done", !card.done) }
+    }
+
+    fun dismiss(card: PulseCard) = later(card, app.hermesandroid.tr(R.string.pulsepage_card_put_away), { it.copy(dismissed = true) }) { act("dismiss", card) { put("dismissed", true) } }
+
+    private fun show(card: PulseCard, change: (PulseCard) -> PulseCard) {
+        cards = cards?.map { if (it.id == card.id) change(it) else it }
+    }
+
+    /** Shown at once (the card moves or leaves); the notice sends it once its Undo has gone. */
+    private fun later(card: PulseCard, text: String, change: (PulseCard) -> PulseCard, send: suspend () -> Unit) {
+        show(card, change)
+        graph.notify(text, undo = { show(card) { card } }, commit = send)
+    }
+
+    /** A refusal reloads, so the card goes back to what the host has. */
     private suspend fun act(path: String, card: PulseCard, body: JsonObjectBuilder.() -> Unit) {
         try {
             client.rest("POST", "$BASE/$path", buildJsonObject { put("card", card.id); body() })
-            load()
         } catch (e: Exception) {
             error = message(e)
+            load()
         }
     }
 
@@ -154,6 +181,7 @@ class PulseFeed(private val graph: AppGraph) {
 fun PulseScreen(graph: AppGraph, onBack: () -> Unit, onOpenChat: (String) -> Unit) {
     val c = C.colors
     val feed = graph.pulse
+    val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
         feed.load()
         if (!feed.cards.isNullOrEmpty()) feed.seeAll()
@@ -166,26 +194,31 @@ fun PulseScreen(graph: AppGraph, onBack: () -> Unit, onOpenChat: (String) -> Uni
     var historyOpen by rememberSaveable(pending.isEmpty()) { mutableStateOf(pending.isEmpty()) }
     Column(Modifier.fillMaxSize()) {
         PageBar(onBack, trailing = feed.homeChatId?.let { id -> { CapsuleIcon(AF.Chats, stringResource(R.string.pulsepage_chat)) { onOpenChat(id) } } })
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-            item(key = "head") {
-                ScreenHeader(stringResource(R.string.pulsepage_eyebrow), "Pulse", "%02d".format(pending.size))
-                Help(
-                    stringResource(R.string.pulsepage_help, defaultProfileTitle),
-                    Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
-                )
-                feed.error?.let { Text(it, style = CType.footnote, color = c.orange, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) }
-            }
-            when {
-                cards == null -> item(key = "wait") { Loading() }
-                pending.isEmpty() -> item(key = "rated") { Empty(stringResource(if (history.isEmpty()) R.string.pulsepage_no_cards else R.string.pulsepage_nothing_to_rate)) }
-            }
-            if (pending.isNotEmpty()) {
-                item(key = "h-pending") { SectionHeader(stringResource(R.string.pulsepage_to_rate), pending.size, collapsed = false) {} }
-                items(pending, key = { it.id }) { PulseCardView(it, feed, talk) }
-            }
-            if (history.isNotEmpty()) {
-                item(key = "h-history") { SectionHeader(stringResource(R.string.pulsepage_earlier), history.size, collapsed = !historyOpen) { historyOpen = !historyOpen } }
-                if (historyOpen) items(history, key = { it.id }) { PulseCardView(it, feed, talk) }
+        // The header scrolls with the cards, so the rule sits under the bar.
+        ScrollRule()
+        Refreshable({ feed.load() }) {
+            val pageList = rememberPageList()
+            LazyColumn(state = pageList, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+                row("head") {
+                    ScreenHeader(stringResource(R.string.pulsepage_eyebrow), "Pulse", "%02d".format(pending.size))
+                    Help(
+                        stringResource(R.string.pulsepage_help, defaultProfileTitle),
+                        Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+                    )
+                    feed.error?.let { ErrorState(it) { scope.launch { feed.load() } } }
+                }
+                when {
+                    cards == null -> row("wait") { Skeleton() }
+                    pending.isEmpty() -> row("rated") { EmptyState(AF.Pulse, stringResource(if (history.isEmpty()) R.string.pulsepage_no_cards else R.string.pulsepage_nothing_to_rate)) }
+                }
+                if (pending.isNotEmpty()) {
+                    row("h-pending") { SectionHeader(stringResource(R.string.pulsepage_to_rate), pending.size, collapsed = false) {} }
+                    rows(pending, key = { it.id }) { PulseCardView(it, feed, talk) }
+                }
+                if (history.isNotEmpty()) {
+                    row("h-history") { SectionHeader(stringResource(R.string.pulsepage_earlier), history.size, collapsed = !historyOpen) { historyOpen = !historyOpen } }
+                    if (historyOpen) rows(history, key = { it.id }) { PulseCardView(it, feed, talk) }
+                }
             }
         }
     }
@@ -194,7 +227,6 @@ fun PulseScreen(graph: AppGraph, onBack: () -> Unit, onOpenChat: (String) -> Uni
 @Composable
 private fun PulseCardView(card: PulseCard, feed: PulseFeed, onTalk: (PulseCard) -> Unit) {
     val c = C.colors
-    val scope = rememberCoroutineScope()
     Card(null, AF.AutoAwesome, Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
         val meta = listOfNotNull(card.label(), card.chatTitle.takeIf { card.linked && it.isNotBlank() },
             card.createdAt.takeIf { it > 0 }?.let { ago(it.toDouble()) })
@@ -206,15 +238,15 @@ private fun PulseCardView(card: PulseCard, feed: PulseFeed, onTalk: (PulseCard) 
                 // Thumbs as quiet icons: the chosen one lights up in a raised well. The API has no "unrate": tapping it again does nothing.
                 @Composable fun thumb(mine: String, up: Boolean) = CapsuleIcon(
                     if (up) AF.ThumbUp else AF.ThumbDown, stringResource(if (up) R.string.pulsepage_useful else R.string.pulsepage_not_useful), selected = card.rating == mine,
-                    tint = when (card.rating) { null -> c.secondary; mine -> c.text; else -> c.tertiary },
-                ) { if (card.rating != mine) scope.launch { feed.rate(card, up) } }
+                    tint = when (card.rating) { null -> c.secondary; mine -> c.text; else -> c.secondary },
+                ) { if (card.rating != mine) feed.rate(card, up) }
                 thumb("up", true)
                 thumb("down", false)
             }
             CapsuleIcon(AF.ChatBubble, stringResource(R.string.pulsepage_talk), tint = c.secondary) { onTalk(card) }
             Spacer(Modifier.weight(1f))
-            if (card.doable) SettingsButton(stringResource(if (card.done) R.string.pulsepage_undo else R.string.pulsepage_done), AF.Check) { scope.launch { feed.done(card, !card.done) } }
-            SettingsButton(stringResource(R.string.pulsepage_not_now)) { scope.launch { feed.dismiss(card) } }
+            if (card.doable) SettingsButton(stringResource(if (card.done) R.string.pulsepage_undo else R.string.pulsepage_done), AF.Check) { feed.done(card) }
+            SettingsButton(stringResource(R.string.pulsepage_not_now)) { feed.dismiss(card) }
         }
     }
 }

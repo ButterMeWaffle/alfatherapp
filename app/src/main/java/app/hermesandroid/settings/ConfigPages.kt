@@ -1,5 +1,14 @@
 package app.hermesandroid.settings
 
+import app.hermesandroid.ui.shell.ScrollRule
+import app.hermesandroid.ui.shell.LocalPageScrolled
+import app.hermesandroid.ui.shell.ReportScroll
+import androidx.compose.runtime.CompositionLocalProvider
+import app.hermesandroid.ui.shell.PageBar
+import app.hermesandroid.ui.components.ErrorState
+import app.hermesandroid.ui.components.Skeleton
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +32,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -211,22 +222,23 @@ val MODEL_FIELDS = listOf(
     Field("model_context_length", R.string.configpages_context_window, R.string.configpages_context_window_help, Ctl.Number(0.0), true),
 )
 
-/** A pushed settings page: back arrow, title, scrolling column. */
+/** A pushed settings page, built like every other page: PageBar, ScreenHeader under the Settings eyebrow, scrolling column. */
 @Composable
 fun SettingsPage(title: String, onBack: () -> Unit, bottomInset: Dp, content: @Composable ColumnScope.() -> Unit) {
-    val c = C.colors
-    Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(44.dp).pressable(label = stringResource(R.string.configpages_back), onClick = onBack), contentAlignment = Alignment.Center) {
-                Icon(app.hermesandroid.ui.icons.AF.Back, null, tint = c.text, modifier = Modifier.size(22.dp))
-            }
-            Text(title, style = CType.title2, color = c.text, maxLines = 1)
+    val scroll = rememberScrollState()
+    // Its own flag: it is composed inside the Settings page, whose flag it would otherwise overwrite.
+    CompositionLocalProvider(LocalPageScrolled provides remember { mutableStateOf(false) }) {
+        ReportScroll(scroll)
+        Column(Modifier.fillMaxSize()) {
+            PageBar(onBack)
+            app.hermesandroid.ui.components.ScreenHeader(stringResource(R.string.settingsscreen_title), title)
+            ScrollRule()
+            Column(
+                Modifier.fillMaxSize().verticalScroll(scroll).padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = bottomInset + 24.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+                content = content,
+            )
         }
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = bottomInset + 24.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
-            content = content,
-        )
     }
 }
 
@@ -271,12 +283,12 @@ fun Picker(label: String?, value: String, choices: List<Pair<String, String>>, e
 fun SmallField(value: String, onChange: (String) -> Unit, placeholder: String, number: Boolean = false, multiline: Boolean = false, modifier: Modifier = Modifier) {
     val c = C.colors
     Box(modifier.clip(app.hermesandroid.ui.theme.Radii.md).background(c.raised).padding(horizontal = 12.dp, vertical = 10.dp)) {
-        if (value.isEmpty()) Text(placeholder, style = CType.subheadline, color = c.tertiary)
+        if (value.isEmpty()) Text(placeholder, style = CType.subheadline, color = c.secondary)
         BasicTextField(
             value, onChange, singleLine = !multiline, minLines = if (multiline) 3 else 1,
             textStyle = CType.subheadline.copy(color = c.text), cursorBrush = SolidColor(c.accent),
             keyboardOptions = if (number) KeyboardOptions(keyboardType = KeyboardType.Decimal) else KeyboardOptions.Default,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = placeholder },
         )
     }
 }
@@ -284,12 +296,13 @@ fun SmallField(value: String, onChange: (String) -> Unit, placeholder: String, n
 @Composable
 fun SwitchRow(title: String, help: String?, value: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     val c = C.colors
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    // The whole row is the switch: TalkBack reads the title with its state, and a tap on the text toggles it too.
+    Row(Modifier.toggleable(value, interactionSource = null, indication = null, enabled = enabled, role = Role.Switch, onValueChange = onChange), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(title, style = CType.callout.medium(), color = c.text)
             if (help != null) Help(help)
         }
-        Switch(value, onChange, enabled = enabled)
+        Switch(value, null, enabled = enabled)
     }
 }
 
@@ -309,7 +322,8 @@ fun ConfigFields(graph: AppGraph, sections: List<Section>, overrides: Map<String
     var loadError by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf<String?>(null) }
     var saved by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(graph.profile) {
+    var attempt by remember { mutableStateOf(0) }
+    LaunchedEffect(graph.profile, attempt) {
         loading = true
         coroutineScope {
             val s = async { graph.hostConfig.schema() }
@@ -339,11 +353,8 @@ fun ConfigFields(graph: AppGraph, sections: List<Section>, overrides: Map<String
         }
     }
 
-    if (loading) {
-        Row(Modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalArrangement = Arrangement.Center) { CircularProgressIndicator(color = c.accent) }
-        return
-    }
-    loadError?.let { Text(it, style = CType.footnote, color = c.red); return }
+    if (loading) { Skeleton(); return }
+    loadError?.let { ErrorState(it) { attempt++ }; return }
     sections.forEach { sec ->
         val shown = sec.fields.mapNotNull { it.resolved(schema) }
         if (shown.isEmpty()) return@forEach

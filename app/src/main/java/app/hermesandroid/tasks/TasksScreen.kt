@@ -1,5 +1,14 @@
 package app.hermesandroid.tasks
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.draw.rotate
+import app.hermesandroid.ui.theme.Motion
+import app.hermesandroid.ui.components.Refreshable
+import app.hermesandroid.ui.theme.rows
+import app.hermesandroid.ui.components.EmptyState
+import app.hermesandroid.ui.components.ErrorState
+import app.hermesandroid.ui.components.Skeleton
+import app.hermesandroid.ui.theme.row
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -18,18 +27,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,7 +74,6 @@ import app.hermesandroid.ui.theme.C
 import app.hermesandroid.ui.theme.CType
 import app.hermesandroid.ui.theme.AfColors
 import app.hermesandroid.ui.theme.Haptic
-import app.hermesandroid.ui.theme.glass
 import app.hermesandroid.ui.theme.medium
 import app.hermesandroid.ui.theme.pressable
 import app.hermesandroid.ui.theme.semibold
@@ -138,13 +146,9 @@ fun TasksScreen(graph: AppGraph, bottomInset: Dp, onBack: () -> Unit, onOpenChat
             SegmentBar(done, total, Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp))
         } else ScreenHeader("Cron", stringResource(R.string.tasksscreen_scheduled), "%02d".format(s.jobs.size))
         UnderlineTabs(listOf(stringResource(R.string.tasksscreen_board), if (s.unread.isEmpty()) stringResource(R.string.tasksscreen_scheduled) else stringResource(R.string.tasksscreen_scheduled_unread, s.unread.size)), s.page.ordinal, Modifier.padding(bottom = 12.dp)) { s.page = TasksPage.entries[it] }
-        s.notice?.let { msg ->
-            LaunchedEffect(msg) { delay(6000); s.notice = null }
-            Text(msg, style = CType.footnote.medium(), color = c.text, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().settingsCard(Radii.lg).padding(horizontal = 16.dp, vertical = 12.dp))
-        }
         when (s.page) {
-            TasksPage.Board -> Board(s, bottomInset)
-            TasksPage.Scheduled -> Scheduled(s, bottomInset) { editJob = it }
+            TasksPage.Board -> Refreshable({ s.loadBoard().join() }) { Board(s, bottomInset) }
+            TasksPage.Scheduled -> Refreshable({ s.loadJobs().join() }) { Scheduled(s, bottomInset) { editJob = it } }
         }
     }
     s.detail?.let { TaskSheet(s, it, graph.profiles) }
@@ -190,18 +194,18 @@ private fun Board(s: TasksState, bottomInset: Dp) {
             Pill(stringResource(R.string.tasksscreen_all), who == null) { who = null }
             assignees.forEach { a -> Pill(profileTitle(a), who == a) { who = if (who == a) null else a } }
         }
-        s.boardError?.let { Text(it, style = CType.footnote, color = c.red, modifier = Modifier.padding(16.dp)) }
-        if (s.columns.isEmpty() && s.loadingBoard) Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = c.accent) }
+        s.boardError?.let { ErrorState(it) { s.loadBoard() } }
+        if (s.columns.isEmpty() && s.loadingBoard) Skeleton()
         // One vertical list: a section per status in the order they matter, empty ones hidden, finished ones folded.
         val open = remember { androidx.compose.runtime.mutableStateListOf<String>() }
         val cols = s.columns.map { col -> if (who == null) col else col.copy(tasks = col.tasks.filter { it.assignee == who }) }.filter { it.tasks.isNotEmpty() }.sortedBy { ORDER.indexOf(it.name).let { i -> if (i < 0) ORDER.size else i } }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottomInset + 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (cols.isEmpty() && !s.loadingBoard) item { Text(stringResource(R.string.tasksscreen_no_tasks), style = CType.subheadline, color = c.secondary, modifier = Modifier.padding(vertical = 16.dp, horizontal = 4.dp)) }
+            if (cols.isEmpty() && !s.loadingBoard) row("empty") { EmptyState(AF.Board, stringResource(R.string.tasksscreen_no_tasks), hint = stringResource(R.string.tasksscreen_create_hint)) }
             cols.forEach { col ->
                 val foldable = col.name in FOLDED
                 val folded = foldable && col.name !in open
-                item(key = "h-" + col.name) { StatusHeader(col, foldable, folded) { if (col.name in open) open.remove(col.name) else open.add(col.name) } }
-                if (!folded) items(col.tasks, key = { it.id }) { t -> TaskCard(t) { s.openTask(t.id) } }
+                row("h-" + col.name) { StatusHeader(col, foldable, folded) { if (col.name in open) open.remove(col.name) else open.add(col.name) } }
+                if (!folded) rows(col.tasks, key = { it.id }) { t -> TaskCard(t) { s.openTask(t.id) } }
             }
         }
     }
@@ -221,8 +225,11 @@ private fun StatusHeader(col: KColumn, foldable: Boolean, folded: Boolean, onTog
     ) {
         Icon(st.icon, null, tint = st.tint, modifier = Modifier.size(13.dp))
         Eyebrow(st.label, Modifier.weight(1f))
-        Text("%02d".format(col.tasks.size), style = CType.data, color = c.tertiary)
-        if (foldable) Icon(if (folded) AF.Forward else AF.ExpandMore, null, tint = c.tertiary, modifier = Modifier.size(14.dp))
+        Text("%02d".format(col.tasks.size), style = CType.data, color = c.secondary)
+        if (foldable) {
+            val angle by animateFloatAsState(if (folded) -90f else 0f, Motion.ease(), label = "fold")
+            Icon(AF.ExpandMore, null, tint = c.tertiary, modifier = Modifier.size(14.dp).rotate(angle))
+        }
     }
 }
 
@@ -237,7 +244,7 @@ private fun TaskCard(t: KTask, onClick: () -> Unit) {
             Text(t.title, style = CType.subheadline.medium(), color = c.text, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
         val meta = listOfNotNull(t.assignee?.let(::profileTitle), if (t.priority > 0) "P${t.priority}" else null, if (t.comments > 0) pluralStringResource(R.plurals.tasksscreen_comments, t.comments, t.comments) else null).joinToString(" · ")
-        if (meta.isNotEmpty()) Text(meta, style = CType.data, color = c.tertiary)
+        if (meta.isNotEmpty()) Text(meta, style = CType.data, color = c.secondary)
         (t.failure ?: t.summary)?.let { Text(it, style = CType.caption, color = if (t.failure != null) c.red else c.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
         if (t.status == "running") ScanLine(Modifier.fillMaxWidth().padding(top = 4.dp))
     }
@@ -258,7 +265,7 @@ private fun TaskSheet(s: TasksState, d: KDetail, profiles: List<String>) {
                 Icon(st.icon, null, tint = st.tint, modifier = Modifier.size(16.dp))
                 Text(st.label.uppercase(), style = CType.caption2.semibold(), color = st.tint)
                 Spacer(Modifier.weight(1f))
-                Text(t.id, style = CType.caption2.copy(fontFamily = CType.mono), color = c.tertiary)
+                Text(t.id, style = CType.caption2.copy(fontFamily = CType.mono), color = c.secondary)
             }
             Text(t.title, style = CType.title3.semibold(), color = c.text)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -331,8 +338,9 @@ private fun TaskSheet(s: TasksState, d: KDetail, profiles: List<String>) {
             }
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.text.copy(alpha = 0.05f)).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f).padding(vertical = 10.dp)) {
-                    if (reply.isEmpty()) Text(if (t.status == "blocked") stringResource(R.string.tasksscreen_reply_unblock) else stringResource(R.string.tasksscreen_comment_hint), style = CType.subheadline, color = c.tertiary)
-                    BasicTextField(reply, { reply = it }, textStyle = CType.subheadline.copy(color = c.text), cursorBrush = SolidColor(c.accent))
+                    if (reply.isEmpty()) Text(if (t.status == "blocked") stringResource(R.string.tasksscreen_reply_unblock) else stringResource(R.string.tasksscreen_comment_hint), style = CType.subheadline, color = c.secondary)
+                    val replyLabel = stringResource(if (t.status == "blocked") R.string.tasksscreen_reply_unblock_label else R.string.tasksscreen_comment_label)
+                    BasicTextField(reply, { reply = it }, textStyle = CType.subheadline.copy(color = c.text), cursorBrush = SolidColor(c.accent), modifier = Modifier.semantics { contentDescription = replyLabel })
                 }
                 Box(Modifier.size(42.dp).pressable(enabled = reply.isNotBlank() || t.status == "blocked") {
                     if (t.status == "blocked") s.replyAndUnblock(t, reply) else s.comment(t, reply); reply = ""
@@ -378,9 +386,9 @@ private fun NewTaskDialog(s: TasksState, assignees: List<String>, onDismiss: () 
                         assignees.distinct().forEach { p -> DropdownMenuItem({ Text(profileTitle(p)) }, { menu = false; assignee = p }) }
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.toggleable(triage, interactionSource = null, indication = null, role = Role.Switch) { triage = it }, verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.tasksscreen_triage_first), style = CType.subheadline, color = c.text, modifier = Modifier.weight(1f))
-                    Switch(triage, { triage = it }, colors = SwitchDefaults.colors(checkedTrackColor = c.accent))
+                    Switch(triage, null, colors = SwitchDefaults.colors(checkedTrackColor = c.accent))
                 }
             }
         },
@@ -395,9 +403,10 @@ private fun NewTaskDialog(s: TasksState, assignees: List<String>, onDismiss: () 
 private fun Scheduled(s: TasksState, bottomInset: Dp, onOpen: (CronJob) -> Unit) {
     val c = C.colors
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = bottomInset + 16.dp)) {
-        s.jobsError?.let { item { Text(it, style = CType.footnote, color = c.red) } }
-        if (s.jobs.isEmpty() && s.jobsError == null) item { Text(stringResource(R.string.tasksscreen_no_jobs), style = CType.subheadline, color = c.secondary, modifier = Modifier.padding(vertical = 16.dp)) }
-        items(s.jobs, key = { it.id }) { j ->
+        s.jobsError?.let { row("error") { ErrorState(it) { s.loadJobs() } } }
+        if (!s.jobsLoaded && s.jobs.isEmpty()) row("loading") { Skeleton() }
+        else if (s.jobs.isEmpty() && s.jobsError == null) row("empty") { EmptyState(AF.Schedule, stringResource(R.string.tasksscreen_no_jobs), hint = stringResource(R.string.tasksscreen_create_hint)) }
+        rows(s.jobs, key = { it.id }) { j ->
             val next = j.nextRun?.let(::epochOf)
             val unread = stringResource(R.string.tasksscreen_unread_result)
             Column(Modifier.fillMaxWidth().pressable(haptic = Haptic.Light) { onOpen(j) }.padding(vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -468,7 +477,7 @@ private fun JobSheet(s: TasksState, j: CronJob, onOpenChat: (String, String, Str
             }
             // What the job produced comes first; its (often long) instructions stay folded.
             Text(stringResource(R.string.tasksscreen_recent_runs), style = CType.footnote.semibold(), color = c.secondary)
-            if (s.runs.isEmpty()) Text(stringResource(R.string.tasksscreen_no_runs), style = CType.footnote, color = c.tertiary)
+            if (s.runs.isEmpty()) Text(stringResource(R.string.tasksscreen_no_runs), style = CType.footnote, color = c.secondary)
             // The newest run opens with its result; the others expand on tap.
             var expanded by remember(j.id) { mutableStateOf<String?>(null) }
             LaunchedEffect(s.runs.firstOrNull()?.id) { expanded = s.runs.firstOrNull()?.id }
@@ -480,13 +489,13 @@ private fun JobSheet(s: TasksState, j: CronJob, onOpenChat: (String, String, Str
                     Text(r.startedAt?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it * 1000)) } ?: r.title ?: j.name,
                         style = CType.subheadline.semibold(), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (open) {
-                        if (r.id !in s.results) Text(stringResource(R.string.tasksscreen_loading), style = CType.footnote, color = c.tertiary)
+                        if (r.id !in s.results) Text(stringResource(R.string.tasksscreen_loading), style = CType.footnote, color = c.secondary)
                         else s.results[r.id]?.let { res ->
                             res.title?.let { Text(it, style = CType.headline, color = c.text) }
                             AfMarkdown(res.body, 0.85f)
                             // Like a Pulse card's: a new chat with the result quoted in the composer; nothing is sent.
                             SettingsButton(stringResource(R.string.tasksscreen_talk_about), AF.ChatBubble) { onDismiss(); onTalk("${res.title ?: j.name}\n\n${res.body}") }
-                        } ?: Text(stringResource(R.string.tasksscreen_no_result), style = CType.footnote, color = c.tertiary)
+                        } ?: Text(stringResource(R.string.tasksscreen_no_result), style = CType.footnote, color = c.secondary)
                         Text(stringResource(R.string.tasksscreen_full_chat), style = CType.footnote.semibold(), color = c.accent,
                             modifier = Modifier.pressable { onDismiss(); onOpenChat(r.id, r.title ?: j.name, j.profile) }.padding(vertical = 4.dp))
                     }

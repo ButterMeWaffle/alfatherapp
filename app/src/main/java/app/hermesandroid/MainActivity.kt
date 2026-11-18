@@ -1,5 +1,7 @@
 package app.hermesandroid
 
+import app.hermesandroid.ui.components.NoticeBar
+import androidx.compose.foundation.layout.imePadding
 import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
@@ -23,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.WindowInsets
@@ -42,7 +45,6 @@ import app.hermesandroid.login.LoginScreen
 import app.hermesandroid.sessions.ArtifactsPage
 import app.hermesandroid.sessions.ProjectsScreen
 import app.hermesandroid.sessions.Sidebar
-import app.hermesandroid.ui.shell.PageBar
 import app.hermesandroid.ui.theme.frosted
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalDrawerSheet
@@ -126,7 +128,7 @@ class MainActivity : FragmentActivity() {
 
     /** allfather:// (or conduit://, hermes://) connect?url=…&username=…&password=…. Only prefills a new dashboard. */
     private val micPermission = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) talk() else android.widget.Toast.makeText(this, getString(R.string.mainactivity_mic_needed, app.hermesandroid.ui.shell.defaultProfileTitle), android.widget.Toast.LENGTH_SHORT).show()
+        if (ok) talk() else graph.notify(getString(R.string.mainactivity_mic_needed, app.hermesandroid.ui.shell.defaultProfileTitle))
     }
 
     /** "Talk" from a shortcut, the widget or the tile: a Gemini Live call once the mic is allowed. */
@@ -134,7 +136,7 @@ class MainActivity : FragmentActivity() {
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             micPermission.launch(android.Manifest.permission.RECORD_AUDIO); return
         }
-        graph.talkWhenReady { android.widget.Toast.makeText(this, it, android.widget.Toast.LENGTH_LONG).show() }
+        graph.talkWhenReady { graph.notify(it) }
     }
 
     private fun handleLink(intent: Intent?) {
@@ -210,6 +212,7 @@ private fun Root(graph: AppGraph) {
     // Whatever covers the chat (a page, the sidebar, a bot room, a call) takes the composer's keyboard with it.
     val focus = LocalFocusManager.current
     // targetValue: the keyboard goes as the sidebar starts opening, not after (isOpen flips only once it has settled).
+    var composer by remember { mutableStateOf(0.dp) }
     val covered = graph.page != null || drawer.targetValue == DrawerValue.Open || graph.bots.room != null || graph.showCall
     LaunchedEffect(covered) { if (covered) focus.clearFocus() }
     // Back with the keyboard up closes the keyboard first. Android hands back to the newest handler, and the chat's
@@ -217,6 +220,10 @@ private fun Root(graph: AppGraph) {
     if (WindowInsets.isImeVisible) BackHandler { focus.clearFocus() }
     // What the sidebar's frosted glass blurs: the chat, or a page just picked in the sidebar as it closes over it.
     val haze = rememberHazeState()
+    // The notice sits over everything, the sidebar included (an archive there shows its Undo above the scrim). An open
+    // sheet is a window of its own above all this: while one is, the sheet draws the notice.
+    CompositionLocalProvider(app.hermesandroid.ui.components.LocalNotices provides graph.notices) {
+    Box(Modifier.fillMaxSize()) {
     ModalNavigationDrawer(
         drawerState = drawer,
         gesturesEnabled = graph.page == null || drawer.isOpen,
@@ -240,7 +247,11 @@ private fun Root(graph: AppGraph) {
         },
     ) {
         Box(Modifier.fillMaxSize().hazeSource(haze)) {
-            ChatScreen(graph, onMenu = { scope.launch { drawer.open() } })
+            // Covered, the chat stays composed (pages slide over it) but leaves the accessibility tree: TalkBack
+            // otherwise reached its menu, "Nuevo chat" and "Más" under every page.
+            Box(if (covered) Modifier.clearAndSetSemantics {} else Modifier) {
+                ChatScreen(graph, onMenu = { scope.launch { drawer.open() } }, onComposer = { composer = it })
+            }
             // Keep the last page on screen while it slides away.
             var shown by remember { mutableStateOf(graph.page) }
             if (graph.page != null) shown = graph.page
@@ -253,18 +264,17 @@ private fun Root(graph: AppGraph) {
                 PredictiveBackLayer(graph.page != null, onBack = { graph.page = null }) {
                     Backdrop(Modifier.fillMaxSize())
                     Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-                        val back = { graph.page = null }
-                        when (shown) {
-                            Page.Tasks -> app.hermesandroid.tasks.TasksScreen(graph, bottomInset = 0.dp, onBack = back) { id, title, profile -> chat.open(id, title, profile) }
-                            Page.Bots -> app.hermesandroid.bots.BotsScreen(graph, bottomInset = 0.dp, onBack = back)
-                            Page.Settings -> SettingsScreen(graph, bottomInset = 0.dp, onBack = back)
-                            Page.Projects -> ProjectsScreen(graph, onBack = back)
-                            Page.Pulse -> app.hermesandroid.settings.PulseScreen(graph, onBack = back) { id -> chat.open(id, "Pulse") }
-                            Page.Artifacts -> Column(Modifier.fillMaxSize()) {
-                                PageBar(back)
-                                ArtifactsPage(graph, 0.dp) { id, title -> chat.open(id, title) }
+                        CompositionLocalProvider(app.hermesandroid.ui.shell.LocalPageScrolled provides remember(shown) { mutableStateOf(false) }) {
+                            val back = { graph.page = null }
+                            when (shown) {
+                                Page.Tasks -> app.hermesandroid.tasks.TasksScreen(graph, bottomInset = 0.dp, onBack = back) { id, title, profile -> chat.open(id, title, profile) }
+                                Page.Bots -> app.hermesandroid.bots.BotsScreen(graph, bottomInset = 0.dp, onBack = back)
+                                Page.Settings -> SettingsScreen(graph, bottomInset = 0.dp, onBack = back)
+                                Page.Projects -> ProjectsScreen(graph, onBack = back)
+                                Page.Pulse -> app.hermesandroid.settings.PulseScreen(graph, onBack = back) { id -> chat.open(id, "Pulse") }
+                                Page.Artifacts -> ArtifactsPage(graph, 0.dp, onBack = back) { id, title -> chat.open(id, title) }
+                                null -> {}
                             }
-                            null -> {}
                         }
                     }
                 }
@@ -288,5 +298,13 @@ private fun Root(graph: AppGraph) {
                 PredictiveBackLayer(graph.showCall, onBack = hide) { app.hermesandroid.voice.LiveCallScreen(graph, hide) }
             }
         }
+    }
+    // Over the chat it sits just above the composer (whatever it holds); over a page or the sidebar, at the foot.
+    NoticeBar(
+        graph.notices.current.takeIf { graph.notices.sheets == 0 }, graph.notices::undo, graph.notices::settle,
+        Modifier.align(Alignment.BottomCenter).zIndex(3f).navigationBarsPadding().imePadding()
+            .padding(start = 16.dp, end = 16.dp, bottom = 12.dp + if (covered) 0.dp else composer),
+    )
+    }
     }
 }

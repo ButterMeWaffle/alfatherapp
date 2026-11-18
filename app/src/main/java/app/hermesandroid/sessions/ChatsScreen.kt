@@ -1,5 +1,22 @@
 package app.hermesandroid.sessions
 
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import app.hermesandroid.ui.shell.ScrollRule
+import app.hermesandroid.ui.shell.rememberPageList
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import kotlinx.coroutines.launch
+import app.hermesandroid.ui.theme.rows
+import app.hermesandroid.ui.components.EmptyState
+import app.hermesandroid.ui.components.ErrorState
+import app.hermesandroid.ui.components.Skeleton
+import app.hermesandroid.ui.theme.row
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -17,7 +34,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -155,47 +171,51 @@ fun Sidebar(graph: AppGraph, onClose: () -> Unit) {
         val grouped = if (flat) mapOf(Section.Older to visible) else visible.groupBy { sectionOf(it, startOfToday) }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = PaddingValues(bottom = 12.dp)) {
             if (!searching) {
-                item(key = "nav") {
+                row("nav") {
                     Column(Modifier.padding(top = 4.dp, bottom = 8.dp)) {
                         NavRow(AF.Compose, stringResource(R.string.chatsscreen_new_chat)) { graph.chat.openNew(); onClose() }
                         if (graph.hostPlugin.reports("pulse")) NavRow(AF.Pulse, "Pulse", graph.pulse.pending.size) { go(Page.Pulse) }
                         NavRow(AF.Board, stringResource(R.string.chatsscreen_tasks), graph.tasks.unread.size) { go(Page.Tasks) }
                         NavRow(AF.Bots, "Bots") { go(Page.Bots) }
                         NavRow(AF.Folder, stringResource(R.string.chatsscreen_projects)) { go(Page.Projects) }
-                        NavRow(AF.GridView, "Artifacts") { go(Page.Artifacts) }
+                        NavRow(AF.GridView, stringResource(R.string.chatsscreen_artifacts)) { go(Page.Artifacts) }
                         Divider(inset = 22.dp)
                     }
                 }
             }
-            if (!connected && lastError != null) item(key = "conn") { Problem(lastError!!) }
-            s.error?.let { item(key = "err") { Problem(it) } }
+            if (!connected && lastError != null) row("conn") { ErrorState(lastError!!) }
+            s.error?.let { row("err") { ErrorState(it) { s.refresh() } } }
             Section.entries.forEach { section ->
                 val rows = grouped[section] ?: return@forEach
                 val isCollapsed = section.name in s.collapsed
-                if (!flat) item(key = "h-${section.name}") {
+                if (!flat) row("h-${section.name}") {
                     SectionHeader(stringResource(section.title), rows.size, isCollapsed) { if (isCollapsed) s.collapsed.remove(section.name) else s.collapsed.add(section.name) }
                 }
-                if (!isCollapsed || flat) items(rows, key = { it.id }) { row -> SidebarRow(s, row, row.id in waiting, { dialog = it }) { open(row.id, row.title, row.profile) } }
+                if (!isCollapsed || flat) rows(rows, key = { it.id }) { row -> SidebarRow(s, row, row.id in waiting, { dialog = it }) { open(row.id, row.title, row.profile) } }
             }
             if (s.searchHits.isNotEmpty() || s.searching) {
-                item(key = "h-search") { SectionHeader(stringResource(R.string.chatsscreen_in_messages), s.searchHits.size, collapsed = false) {} }
-                items(s.searchHits, key = { "hit-" + it.id }) { hit -> SearchHitRow(hit) { open(hit.id, hit.title ?: "Chat") } }
-                if (s.searching) item(key = "searching") { Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(18.dp), color = c.accent, strokeWidth = 1.5.dp) } }
+                row("h-search") { SectionHeader(stringResource(R.string.chatsscreen_in_messages), s.searchHits.size, collapsed = false) {} }
+                rows(s.searchHits, key = { "hit-" + it.id }) { hit -> SearchHitRow(hit) { open(hit.id, hit.title ?: "Chat") } }
+                if (s.searching) row("searching") { Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(18.dp), color = c.accent, strokeWidth = 1.5.dp) } }
             }
-            if (visible.isEmpty() && s.searchHits.isEmpty() && !s.refreshing) item(key = "empty") {
-                Text(stringResource(if (s.filter == Filter.All) R.string.chatsscreen_no_chats else R.string.chatsscreen_no_match), style = CType.subheadline, color = c.secondary, modifier = Modifier.padding(horizontal = 22.dp, vertical = 16.dp))
+            if (visible.isEmpty() && s.searchHits.isEmpty()) {
+                if (s.refreshing) row("loading") { Skeleton(6) }
+                else row("empty") {
+                    if (s.filter == Filter.All) EmptyState(AF.Chats, stringResource(R.string.chatsscreen_no_chats), hint = stringResource(R.string.chatsscreen_no_chats_hint))
+                    else EmptyState(AF.FilterList, stringResource(R.string.chatsscreen_no_match), action = stringResource(R.string.chatsscreen_remove_filter)) { s.applyFilter(Filter.All) }
+                }
             }
         }
         Divider(inset = 0.dp)
         Row(
             Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 10.dp).clip(Radii.pill)
-                .combinedClickable(onClick = { go(Page.Settings) }, onLongClick = { profilesSheet = true }).padding(4.dp),
+                .pressable(haptic = Haptic.Light, onLongClick = { profilesSheet = true }) { go(Page.Settings) }.padding(4.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Avatar(graph.profile, size = 36.dp, image = graph.avatars[graph.profile])
             Column {
                 Text(profileTitle(graph.profile), style = CType.callout.medium(), color = c.text, maxLines = 1)
-                Text(stringResource(R.string.chatsscreen_settings), style = CType.data, color = c.tertiary)
+                Text(stringResource(R.string.chatsscreen_settings), style = CType.data, color = c.secondary)
             }
         }
     }
@@ -226,9 +246,30 @@ private fun SidebarRow(s: ChatsState, row: SessionRow, needsApproval: Boolean, o
     val isRunning = runState != null && runState != "idle" && !needsApproval
     val unread = s.isUnread(row)
     var menu by remember { mutableStateOf(false) }
-    Box {
+    // Letting go past the line acts once and the row snaps back at once (an animated reset left it swiped away while
+    // the list moved it): pinning keeps it in the list, archiving fades it out.
+    val current by rememberUpdatedState(row)
+    val scope = rememberCoroutineScope()
+    val swipe = rememberSwipeToDismissBoxState()
+    // A tick as the row crosses the line where letting go acts.
+    LaunchedEffect(swipe.targetValue) { if (swipe.targetValue != SwipeToDismissBoxValue.Settled) Haptic.Medium.perform(view) }
+    SwipeToDismissBox(
+        swipe,
+        backgroundContent = { SwipeBack(swipe.dismissDirection, row) },
+        onDismiss = { dir ->
+            scope.launch { swipe.snapTo(SwipeToDismissBoxValue.Settled) }
+            if (dir == SwipeToDismissBoxValue.StartToEnd) s.setPinned(current, !current.pinned) else s.setArchived(current, !current.archived)
+        },
+    ) { Box {
         Row(
             Modifier.fillMaxWidth()
+                // What the swipe does, offered to TalkBack (which can't swipe a row) as the row's own actions.
+                .semantics {
+                    customActions = listOf(
+                        CustomAccessibilityAction(pinLabel(row)) { s.setPinned(row, !row.pinned); true },
+                        CustomAccessibilityAction(archiveLabel(row)) { s.setArchived(row, !row.archived); true },
+                    )
+                }
                 .combinedClickable(onClick = { Haptic.Light.perform(view); onClick() }, onLongClick = { Haptic.Medium.perform(view); menu = true })
                 .padding(horizontal = 22.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -244,6 +285,26 @@ private fun SidebarRow(s: ChatsState, row: SessionRow, needsApproval: Boolean, o
             }
         }
         SessionMenu(menu, { menu = false }, s, row, unread, onDialog)
+    } }
+}
+
+// One wording for the swipe, the long-press menu and TalkBack's actions (voice users say what they read).
+private fun pinLabel(row: SessionRow) = tr(if (row.pinned) R.string.chatsscreen_unpin else R.string.chatsscreen_pin)
+private fun archiveLabel(row: SessionRow) = tr(if (row.archived) R.string.chatsscreen_restore else R.string.chatsscreen_archive)
+
+/** What a swipe will do, under the row: pin from the left, archive from the right. Nothing at rest (the sidebar is glass). */
+@Composable
+private fun SwipeBack(dir: SwipeToDismissBoxValue, row: SessionRow) {
+    if (dir == SwipeToDismissBoxValue.Settled) return
+    val c = C.colors
+    val pin = dir == SwipeToDismissBoxValue.StartToEnd
+    Row(
+        Modifier.fillMaxSize().background(c.raised).padding(horizontal = 22.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp, if (pin) Alignment.Start else Alignment.End),
+    ) {
+        Icon(if (pin) AF.PushPin else if (row.archived) AF.Unarchive else AF.Archive, null, tint = c.text, modifier = Modifier.size(16.dp))
+        Text(if (pin) pinLabel(row) else archiveLabel(row), style = CType.footnote.medium(), color = c.text)
     }
 }
 
@@ -252,13 +313,13 @@ private fun SidebarRow(s: ChatsState, row: SessionRow, needsApproval: Boolean, o
 private fun SessionMenu(open: Boolean, onDismiss: () -> Unit, s: ChatsState, row: SessionRow, unread: Boolean, onDialog: (Dialog) -> Unit) {
     val c = C.colors
     DropdownMenu(open, onDismiss) {
-        DropdownMenuItem({ Text(stringResource(if (row.pinned) R.string.chatsscreen_unpin else R.string.chatsscreen_pin)) }, { onDismiss(); s.setPinned(row, !row.pinned) }, leadingIcon = { Icon(AF.PushPin, null) })
+        DropdownMenuItem({ Text(pinLabel(row)) }, { onDismiss(); s.setPinned(row, !row.pinned) }, leadingIcon = { Icon(AF.PushPin, null) })
         DropdownMenuItem({ Text(stringResource(if (row.id in s.starred) R.string.chatsscreen_unstar else R.string.chatsscreen_star)) }, { onDismiss(); s.toggleStar(row) }, leadingIcon = { Icon(AF.StarBorder, null) })
         DropdownMenuItem({ Text(stringResource(if (unread) R.string.chatsscreen_mark_read else R.string.chatsscreen_mark_unread)) }, { onDismiss(); if (unread) s.markSeen(row.id) else s.markUnread(row) },
             leadingIcon = { Icon(if (unread) AF.MarkEmailRead else AF.MarkEmailUnread, null) })
         DropdownMenuItem({ Text(stringResource(R.string.chatsscreen_rename_menu)) }, { onDismiss(); onDialog(Dialog.Rename(row)) }, leadingIcon = { Icon(AF.Edit, null) })
         DropdownMenuItem({ Text(stringResource(R.string.chatsscreen_move_menu)) }, { onDismiss(); onDialog(Dialog.Move(row)) }, leadingIcon = { Icon(AF.DriveFileMove, null) })
-        DropdownMenuItem({ Text(stringResource(if (row.archived) R.string.chatsscreen_restore else R.string.chatsscreen_archive)) }, { onDismiss(); s.setArchived(row, !row.archived) },
+        DropdownMenuItem({ Text(archiveLabel(row)) }, { onDismiss(); s.setArchived(row, !row.archived) },
             leadingIcon = { Icon(if (row.archived) AF.Unarchive else AF.Archive, null) })
         DropdownMenuItem({ Text(stringResource(R.string.chatsscreen_delete_menu), color = c.red) }, { onDismiss(); onDialog(Dialog.Delete(row)) }, leadingIcon = { Icon(AF.Delete, null, tint = c.red) })
     }
@@ -271,11 +332,12 @@ fun ProjectsScreen(graph: AppGraph, onBack: () -> Unit) {
     var dialog by remember { mutableStateOf<Dialog?>(null) }
     LaunchedEffect(Unit) { s.loadProjects() }
     Column(Modifier.fillMaxSize()) {
-        PageBar(onBack)
+        PageBar(onBack, trailing = { if (s.openProject == null) CapsuleIcon(AF.Add, stringResource(R.string.chatsscreen_new_project)) { dialog = Dialog.NewProject } })
         val p = s.openProject
         if (p != null) ProjectPage(s, p, onOpen = { id, title -> graph.chat.open(id, title) }, onNewChat = { graph.chat.openNew(it) }, bottomInset = 0.dp) { dialog = it }
         else {
             ScreenHeader(stringResource(R.string.chatsscreen_spaces), stringResource(R.string.chatsscreen_projects), "%02d".format(s.projects.size))
+            ScrollRule()
             ProjectList(s, 0.dp) { dialog = it }
         }
     }
@@ -349,11 +411,12 @@ private fun SearchField(s: ChatsState, profile: String) {
             Spacer(Modifier.width(8.dp))
         }
         Box(Modifier.weight(1f)) {
-            if (s.query.isEmpty()) Text(stringResource(R.string.chatsscreen_search_in, profile), style = CType.subheadline, color = c.secondary)
-            BasicTextField(s.query, s::onQueryChange, singleLine = true, textStyle = CType.subheadline.copy(color = c.text), cursorBrush = SolidColor(c.accent), modifier = Modifier.fillMaxWidth())
+            val hint = stringResource(R.string.chatsscreen_search_in, profile)
+            if (s.query.isEmpty()) Text(hint, style = CType.subheadline, color = c.secondary)
+            BasicTextField(s.query, s::onQueryChange, singleLine = true, textStyle = CType.subheadline.copy(color = c.text), cursorBrush = SolidColor(c.accent), modifier = Modifier.fillMaxWidth().semantics { contentDescription = hint })
         }
         if (s.query.isNotEmpty()) Box(Modifier.size(32.dp).pressable(label = stringResource(R.string.chatsscreen_clear)) { s.onQueryChange("") }, contentAlignment = Alignment.Center) {
-            Icon(AF.Cancel, null, tint = c.tertiary, modifier = Modifier.size(17.dp))
+            Icon(AF.Cancel, null, tint = c.secondary, modifier = Modifier.size(17.dp))
         }
     }
 }
@@ -397,7 +460,7 @@ private fun SessionRowView(s: ChatsState, row: SessionRow, needsApproval: Boolea
                     if (row.id in s.starred) Icon(AF.Star, null, tint = c.accent, modifier = Modifier.size(11.dp))
                     if (row.updated > 0) Text(
                         ago(row.updated),
-                        style = CType.data, color = c.tertiary,
+                        style = CType.data, color = c.secondary,
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -441,27 +504,19 @@ private fun SearchHitRow(hit: SearchHit, onClick: () -> Unit) {
     }
 }
 
-@Composable
-private fun Problem(text: String) {
-    val c = C.colors
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(AF.WifiOff, null, tint = c.red, modifier = Modifier.size(16.dp))
-        Text(text, style = CType.footnote.medium(), color = c.red)
-    }
-}
-
 // ---- projects ----
 
 @Composable
 private fun ProjectList(s: ChatsState, bottomInset: Dp, onDialog: (Dialog) -> Unit) {
     val c = C.colors
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = bottomInset + 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.chatsscreen_projects), style = CType.title3.semibold(), color = c.text, modifier = Modifier.weight(1f))
-            SettingsButton(stringResource(R.string.chatsscreen_new_project)) { onDialog(Dialog.NewProject) }
-        } }
-        s.projectsError?.let { item { Text(it, style = CType.footnote, color = c.red) } }
-        items(s.projects, key = { it.id }) { p -> ProjectTile(s, p, onDialog) }
+    val pageList = rememberPageList()
+    LazyColumn(state = pageList, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = bottomInset + 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        s.projectsError?.let { row("error") { ErrorState(it) { s.loadProjects() } } }
+        if (!s.projectsLoaded && s.projects.isEmpty()) row("loading") { Skeleton() }
+        else if (s.projects.isEmpty() && s.projectsError == null) row("empty") {
+            EmptyState(AF.Folder, stringResource(R.string.chatsscreen_no_projects), hint = stringResource(R.string.chatsscreen_no_projects_hint), action = stringResource(R.string.chatsscreen_new_project)) { onDialog(Dialog.NewProject) }
+        }
+        rows(s.projects, key = { it.id }) { p -> ProjectTile(s, p, onDialog) }
     }
 }
 
@@ -471,7 +526,7 @@ private fun ProjectTile(s: ChatsState, p: Project, onDialog: (Dialog) -> Unit) {
     val c = C.colors
     var menu by remember { mutableStateOf(false) }
     Column(
-        Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).combinedClickable(onClick = { s.openProjectPage(p) }, onLongClick = { if (!p.isHome) menu = true }).padding(14.dp),
+        Modifier.fillMaxWidth().glass(Radii.lg).pressable(haptic = Haptic.Light, onLongClick = { if (!p.isHome) menu = true }) { s.openProjectPage(p) }.padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -496,7 +551,10 @@ private fun ProjectTile(s: ChatsState, p: Project, onDialog: (Dialog) -> Unit) {
 private fun ProjectPage(s: ChatsState, p: Project, onOpen: (String, String) -> Unit, onNewChat: (String?) -> Unit, bottomInset: Dp, onDialog: (Dialog) -> Unit) {
     val c = C.colors
     androidx.activity.compose.BackHandler { s.openProject = null }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomInset + 16.dp)) {
+    // No fixed header here: the project's title scrolls with its lanes, so the rule sits under the bar.
+    ScrollRule()
+    val pageList = rememberPageList()
+    LazyColumn(state = pageList, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomInset + 16.dp)) {
         item {
             Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -507,8 +565,8 @@ private fun ProjectPage(s: ChatsState, p: Project, onOpen: (String, String) -> U
             }
         }
         s.lanes.forEach { lane ->
-            item(key = "lane-" + lane.id) { SectionHeader(lane.title, lane.sessions.size, collapsed = false) {} }
-            items(lane.sessions, key = { lane.id + it.id }) { row -> SessionRowView(s, row, false, onDialog) { onOpen(row.id, row.title) } }
+            row("lane-" + lane.id) { SectionHeader(lane.title, lane.sessions.size, collapsed = false) {} }
+            rows(lane.sessions, key = { lane.id + it.id }) { row -> SessionRowView(s, row, false, onDialog) { onOpen(row.id, row.title) } }
         }
         if (s.lanes.isEmpty()) item { Text(stringResource(R.string.chatsscreen_project_empty), style = CType.subheadline, color = c.secondary, modifier = Modifier.padding(16.dp)) }
     }

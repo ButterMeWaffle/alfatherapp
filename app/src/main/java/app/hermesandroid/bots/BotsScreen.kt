@@ -1,5 +1,15 @@
 package app.hermesandroid.bots
 
+import app.hermesandroid.ui.shell.ScrollRule
+import app.hermesandroid.ui.shell.rememberPageList
+import app.hermesandroid.ui.components.SectionHeader
+import app.hermesandroid.ui.components.Refreshable
+import app.hermesandroid.ui.theme.rows
+import app.hermesandroid.ui.components.ErrorState
+import app.hermesandroid.ui.components.Skeleton
+import app.hermesandroid.ui.theme.row
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,7 +35,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -77,12 +86,10 @@ import app.hermesandroid.ui.theme.C
 import app.hermesandroid.ui.theme.CType
 import app.hermesandroid.ui.theme.Haptic
 import app.hermesandroid.ui.theme.chatTextStyle
-import app.hermesandroid.ui.theme.glass
 import app.hermesandroid.ui.theme.medium
 import app.hermesandroid.ui.theme.pressable
 import app.hermesandroid.ui.theme.semibold
 import app.hermesandroid.ui.theme.settingsCard
-import kotlinx.coroutines.delay
 
 // Bots tab, editor (BotEditorSheet) and group rooms (GroupChatView).
 
@@ -103,33 +110,41 @@ fun BotsScreen(graph: AppGraph, bottomInset: Dp, onBack: () -> Unit) {
     val s = graph.bots
     val c = C.colors
     var dialog by remember { mutableStateOf<BotsDialog?>(null) }
+    // Folded groups, like the sidebar's sections (kept while the page is open).
+    val folded = remember { mutableStateListOf<String>() }
+    fun fold(group: String) { if (!folded.remove(group)) folded.add(group) }
     // The roster comes over the WebSocket: reload whenever it (re)connects, or a dropped load keeps its error.
     val connected by graph.client.connected.collectAsStateWithLifecycle()
     LaunchedEffect(connected) { if (connected) s.load() }
     Column(Modifier.fillMaxSize()) {
         PageBar(onBack, trailing = { CapsuleIcon(AF.Add, stringResource(R.string.botsscreen_new_bot)) { dialog = BotsDialog.Edit(null) } })
         app.hermesandroid.ui.components.ScreenHeader(stringResource(R.string.botsscreen_profiles), stringResource(R.string.botsscreen_title), "%02d".format(s.bots.size))
-        s.notice?.let { msg ->
-            LaunchedEffect(msg) { delay(6000); s.notice = null }
-            Text(msg, style = CType.footnote, color = c.text, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().glass(RoundedCornerShape(18.dp), tint = c.yellow.copy(alpha = 0.1f)).padding(14.dp))
-        }
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomInset + 16.dp)) {
-            s.error?.let { item { Text(it, style = CType.footnote, color = c.red, modifier = Modifier.padding(16.dp)) } }
-            val main = s.bots.filter { it.isDefault }
-            val others = s.bots.filter { !it.isDefault }
-            if (main.isNotEmpty()) {
-                item { SectionLabel(stringResource(R.string.botsscreen_main_section)) }
-                items(main, key = { it.name }) { bot -> BotRow(graph, bot, onEdit = { dialog = BotsDialog.View(bot) }, onDelete = {}) }
-            }
-            item { SectionLabel(stringResource(R.string.botsscreen_your_bots)) }
-            items(others, key = { it.name }) { bot -> BotRow(graph, bot, onEdit = { dialog = BotsDialog.Edit(bot) }, onDelete = { dialog = BotsDialog.Delete(bot) }) }
-            if (others.isEmpty()) item { Text(stringResource(R.string.botsscreen_bots_help, app.hermesandroid.ui.shell.defaultProfileTitle), style = CType.footnote, color = c.secondary, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
-            item { CreateRow(stringResource(R.string.botsscreen_new_bot)) { dialog = BotsDialog.Edit(null) } }
-            item { SectionLabel(stringResource(R.string.botsscreen_group_chats)) }
-            if (!s.groupsAvailable) item { Text(stringResource(R.string.botsscreen_no_groups), style = CType.footnote, color = c.secondary, modifier = Modifier.padding(horizontal = 16.dp)) }
-            else {
-                items(s.rooms, key = { "room-" + it.id }) { r -> RoomRow(graph, r) { s.openRoom(r) } }
-                item { CreateRow(stringResource(R.string.botsscreen_new_room)) { dialog = BotsDialog.NewRoom } }
+        ScrollRule()
+        Refreshable({ s.load().join() }) {
+            val pageList = rememberPageList()
+            LazyColumn(state = pageList, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomInset + 16.dp)) {
+                s.error?.let { row("error") { ErrorState(it) { s.load() } } }
+                if (!s.loaded && s.bots.isEmpty()) { row("loading") { Skeleton() }; return@LazyColumn }
+                val main = s.bots.filter { it.isDefault }
+                val others = s.bots.filter { !it.isDefault }
+                if (main.isNotEmpty()) {
+                    row("h-main") { SectionHeader(stringResource(R.string.botsscreen_main_section), main.size, "main" in folded) { fold("main") } }
+                    if ("main" !in folded) rows(main, key = { it.name }) { bot -> BotRow(graph, bot, onEdit = { dialog = BotsDialog.View(bot) }, onDelete = {}) }
+                }
+                row("h-bots") { SectionHeader(stringResource(R.string.botsscreen_your_bots), others.size, "bots" in folded) { fold("bots") } }
+                if ("bots" !in folded) {
+                    rows(others, key = { it.name }) { bot -> BotRow(graph, bot, onEdit = { dialog = BotsDialog.Edit(bot) }, onDelete = { dialog = BotsDialog.Delete(bot) }) }
+                    if (others.isEmpty()) row("bots-help") { Text(stringResource(R.string.botsscreen_bots_help, app.hermesandroid.ui.shell.defaultProfileTitle), style = CType.footnote, color = c.secondary, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
+                    row("new-bot") { CreateRow(stringResource(R.string.botsscreen_new_bot)) { dialog = BotsDialog.Edit(null) } }
+                }
+                row("h-rooms") { SectionHeader(stringResource(R.string.botsscreen_group_chats), s.rooms.size, "rooms" in folded) { fold("rooms") } }
+                if ("rooms" !in folded) {
+                    if (!s.groupsAvailable) row("rooms-help") { Text(stringResource(R.string.botsscreen_no_groups), style = CType.footnote, color = c.secondary, modifier = Modifier.padding(horizontal = 16.dp)) }
+                    else {
+                        rows(s.rooms, key = { "room-" + it.id }) { r -> RoomRow(graph, r) { s.openRoom(r) } }
+                        row("new-room") { CreateRow(stringResource(R.string.botsscreen_new_room)) { dialog = BotsDialog.NewRoom } }
+                    }
+                }
             }
         }
     }
@@ -172,7 +187,7 @@ private fun BotRow(graph: AppGraph, bot: Bot, onEdit: () -> Unit, onDelete: () -
                 Text((bot.lastPreview ?: bot.description).ifBlank { "Bot Chat" }, style = CType.subheadline, color = c.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (bot.pinned) Icon(AF.PushPin, null, tint = c.text.copy(alpha = 0.35f), modifier = Modifier.size(13.dp).padding(end = 2.dp))
-            bot.lastActive?.let { Text(ago(it), style = CType.data, color = c.tertiary) }
+            bot.lastActive?.let { Text(ago(it), style = CType.data, color = c.secondary) }
             DropdownMenu(menu, { menu = false }) {
                 if (bot.isDefault) {
                     DropdownMenuItem({ Text(stringResource(R.string.botsscreen_view_soul)) }, { menu = false; onEdit() }, leadingIcon = { Icon(AF.Edit, null) })
@@ -185,11 +200,6 @@ private fun BotRow(graph: AppGraph, bot: Bot, onEdit: () -> Unit, onDelete: () -
         }
         Divider(inset = 64.dp)
     }
-}
-
-@Composable
-private fun SectionLabel(text: String) {
-    app.hermesandroid.ui.components.Eyebrow(text, Modifier.padding(start = 20.dp, top = 18.dp, bottom = 8.dp))
 }
 
 /** Hermes (default profile) is read-only here: its personality and settings are changed from Hermes itself. */
@@ -271,8 +281,9 @@ private fun BotEditor(graph: AppGraph, bot: Bot?, onDismiss: () -> Unit) {
                 AfField(description, { description = it }, stringResource(R.string.botsscreen_purpose), stringResource(R.string.botsscreen_purpose_hint))
                 Text(stringResource(R.string.botsscreen_soul), style = CType.footnote.semibold(), color = c.secondary)
                 Box(Modifier.fillMaxWidth().heightIn(min = 100.dp).clip(RoundedCornerShape(17.dp)).background(c.text.copy(alpha = 0.06f)).padding(14.dp)) {
-                    if (soul.isEmpty()) Text(stringResource(R.string.botsscreen_soul_hint), style = CType.subheadline, color = c.tertiary)
-                    BasicTextField(soul, { soul = it }, textStyle = CType.subheadline.copy(color = c.text), cursorBrush = SolidColor(c.accent), modifier = Modifier.fillMaxWidth())
+                    if (soul.isEmpty()) Text(stringResource(R.string.botsscreen_soul_hint), style = CType.subheadline, color = c.secondary)
+                    val soulLabel = stringResource(R.string.botsscreen_soul)
+                    BasicTextField(soul, { soul = it }, textStyle = CType.subheadline.copy(color = c.text), cursorBrush = SolidColor(c.accent), modifier = Modifier.fillMaxWidth().semantics { contentDescription = soulLabel })
                 }
                 Text(stringResource(R.string.botsscreen_color), style = CType.footnote.semibold(), color = c.secondary)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -310,7 +321,7 @@ private fun NewRoomDialog(graph: AppGraph, onDismiss: () -> Unit) {
                 s.bots.forEach { b ->
                     val sel = b.name in picked
                     Row(Modifier.fillMaxWidth().pressable { if (sel) picked.remove(b.name) else if (picked.size < 6) picked.add(b.name) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(if (sel) AF.CheckCircle else AF.RadioButtonUnchecked, null, tint = if (sel) c.accent else c.tertiary)
+                        Icon(if (sel) AF.CheckCircle else AF.RadioButtonUnchecked, null, tint = if (sel) c.accent else c.secondary)
                         Spacer(Modifier.width(10.dp))
                         BotAvatar(b, graph.avatars[b.name], 28.dp)
                         Spacer(Modifier.width(8.dp))
@@ -361,7 +372,7 @@ fun RoomScreen(graph: AppGraph, r: Room) {
             }
             LazyColumn(Modifier.weight(1f), state = list, contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (visible.isEmpty()) item { Text(stringResource(R.string.botsscreen_room_empty), style = CType.subheadline, color = c.secondary) }
-                items(visible, key = { it.seq }) { e -> RoomEventRow(graph, r, e) }
+                rows(visible, key = { it.seq }) { e -> RoomEventRow(graph, r, e) }
             }
             s.approvals.forEach { a ->
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp).fillMaxWidth().settingsCard(RoundedCornerShape(22.dp), tint = c.attention.copy(alpha = 0.08f)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

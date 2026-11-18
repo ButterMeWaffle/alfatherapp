@@ -452,4 +452,13 @@
     <string name="alertspage_battery_help" formatted="false">25 % or less, not charging, and an event in the next 2 hours.</string>
     <string name="alertspage_conflicts">Clashes</string>
     <string name="alertspage_conflicts_help">Two events that overlap in the next 24 hours.</string>
+    <string name="controls_loading">Loading</string>
+    <string name="controls_error">Error</string>
+    <string name="controls_retry">Retry</string>
+    <string name="controls_undo">Undo</string>
+    <string name="shell_back_to_call">Back to the call</string>
+    <string name="shell_talk">Talk</string>
+    <string name="pulsepage_marked_done">Marked as done</string>
+    <string name="pulsepage_back_to_pending">Back to pending</string>
+    <string name="pulsepage_card_put_away">Card put away</string>
 </resources>

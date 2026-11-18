@@ -1,20 +1,22 @@
 package app.hermesandroid.settings
 
+import app.hermesandroid.ui.shell.ScrollRule
+import app.hermesandroid.ui.shell.ReportScroll
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.annotation.StringRes
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -105,11 +107,22 @@ private fun SettingsHome(graph: AppGraph, bottomInset: Dp, onBack: () -> Unit, o
     val host = graph.store.baseUrl.substringAfter("://")
     var sheet by remember { mutableStateOf<SettingsSheet?>(null) }
     var biometric by remember { mutableStateOf(graph.store.biometricLock) }
+    var confirmSignOut by remember { mutableStateOf(false) }
+    if (confirmSignOut) AlertDialog(
+        onDismissRequest = { confirmSignOut = false },
+        title = { Text(stringResource(R.string.settingsscreen_sign_out_title, host)) },
+        text = { Text(stringResource(R.string.settingsscreen_sign_out_text)) },
+        confirmButton = { TextButton({ confirmSignOut = false; graph.signOut() }) { Text(stringResource(R.string.settingsscreen_sign_out), color = c.red) } },
+        dismissButton = { TextButton({ confirmSignOut = false }) { Text(stringResource(R.string.capabilities_cancel)) } },
+    )
     Column(Modifier.fillMaxSize()) {
         PageBar(onBack)
         app.hermesandroid.ui.components.ScreenHeader(stringResource(R.string.settingsscreen_eyebrow), stringResource(R.string.settingsscreen_title))
+        ScrollRule()
+        val scroll = rememberScrollState()
+        ReportScroll(scroll)
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottomInset + 24.dp),
+            Modifier.fillMaxSize().verticalScroll(scroll).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottomInset + 24.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             val plugin = graph.hostPlugin
@@ -153,18 +166,12 @@ private fun SettingsHome(graph: AppGraph, bottomInset: Dp, onBack: () -> Unit, o
                     AF.Notifications, stringResource(R.string.settingsscreen_page_notifications),
                     detail = if (graph.push.registered) stringResource(R.string.settingsscreen_notifications_on, graph.push.relayUrl.substringAfter("://")) else stringResource(R.string.settingsscreen_notifications_off),
                 ) { open(SettingsPageId.Notifications) }
-                app.hermesandroid.ui.components.Divider(inset = 56.dp)
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    androidx.compose.material3.Icon(AF.Fingerprint, null, tint = c.accent, modifier = Modifier.size(20.dp))
-                    Box(Modifier.weight(1f).padding(start = 20.dp)) {
-                        SwitchRow(stringResource(R.string.settingsscreen_biometric), stringResource(R.string.settingsscreen_biometric_help), biometric) { biometric = it; graph.setBiometric(it) }
-                    }
-                }
+                SettingsRow(AF.Fingerprint, stringResource(R.string.settingsscreen_biometric), detail = stringResource(R.string.settingsscreen_biometric_help), checked = biometric, onCheckedChange = { biometric = it; graph.setBiometric(it) })
             }
             SettingsGroup(stringResource(R.string.settingsscreen_server), AF.Dns) {
                 SettingsRow(AF.Dns, stringResource(R.string.settingsscreen_dashboards), detail = stringResource(R.string.settingsscreen_dashboards_detail, graph.dashboards.size), first = true) { sheet = SettingsSheet.Dashboards }
                 SettingsRow(AF.Extension, stringResource(R.string.settingsscreen_page_host_plugin), detail = graph.hostPlugin.summary()) { open(SettingsPageId.HostPlugin) }
-                SettingsRow(AF.Logout, stringResource(R.string.settingsscreen_sign_out), detail = host, onClick = graph::signOut)
+                SettingsRow(AF.Logout, stringResource(R.string.settingsscreen_sign_out), detail = host, destructive = true) { confirmSignOut = true }
             }
             SettingsGroup(stringResource(R.string.settingsscreen_about), AF.Info) {
                 SettingsRow(AF.Info, stringResource(R.string.settingsscreen_app_name), detail = stringResource(R.string.settingsscreen_version, BuildConfig.VERSION_NAME), first = true, chevron = false)

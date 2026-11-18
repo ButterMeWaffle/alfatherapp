@@ -1,11 +1,23 @@
 package app.hermesandroid.ui.shell
 
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.gestures.ScrollableState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.MutableState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.staticCompositionLocalOf
+import app.hermesandroid.ui.theme.reducedMotion
+import app.hermesandroid.ui.theme.Motion
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import com.kyant.capsule.ContinuousRoundedRectangle
 import kotlinx.coroutines.CancellationException
@@ -13,23 +25,17 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -47,6 +53,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -88,6 +95,35 @@ fun TopBar(leading: @Composable RowScope.() -> Unit, trailing: (@Composable RowS
     }
 }
 
+/**
+ * Whether the page under its PageBar has left the top: one flag per page, provided by the page's host (MainActivity for
+ * pages, SettingsPage for a settings sub-page, which is composed inside the Settings page). Null outside a page.
+ */
+val LocalPageScrolled = staticCompositionLocalOf<MutableState<Boolean>?> { null }
+
+/** A page's scrolling content tells its bar when it leaves the top; only the flip recomposes, not every scrolled pixel. */
+@Composable
+fun ReportScroll(state: ScrollableState) {
+    val target = LocalPageScrolled.current
+    val now by remember(state) { derivedStateOf { state.canScrollBackward } }
+    SideEffect { target?.value = now }
+}
+
+/** A page's list: remembered, and reporting to its bar. */
+@Composable
+fun rememberPageList(): LazyListState = rememberLazyListState().also { ReportScroll(it) }
+
+/**
+ * The rule over a page's scrolling content: fades in once that content has left the top (what it reports through
+ * ReportScroll). Put it right above the part that scrolls: under a fixed ScreenHeader, under fixed filters, or under
+ * the PageBar when the header scrolls with the list.
+ */
+@Composable
+fun ScrollRule() {
+    val line by animateFloatAsState(if (LocalPageScrolled.current?.value == true) 1f else 0f, Motion.quick(), label = "scrollRule")
+    app.hermesandroid.ui.components.Divider(inset = 0.dp) { line }
+}
+
 /** A page's top bar (pages open over the home chat from the sidebar): back, and optional actions on the right. */
 @Composable
 fun PageBar(onBack: () -> Unit, trailing: (@Composable RowScope.() -> Unit)? = null) {
@@ -125,7 +161,7 @@ fun PredictiveBackLayer(enabled: Boolean, onBack: () -> Unit, content: @Composab
             events.collect { progress.snapTo(it.progress) }
             onBack()
         } catch (e: CancellationException) {
-            scope.launch { progress.animateTo(0f) }
+            scope.launch { progress.animateTo(0f, Motion.page()) }
             throw e
         }
     }
@@ -189,17 +225,21 @@ fun Avatar(name: String, size: Dp = 30.dp, alpha: Float = 1f, color: Color = C.c
 fun VoiceButton(onClick: () -> Unit, live: Boolean = false, size: Dp = 56.dp) {
     val c = C.colors
     val rest = floatArrayOf(0.34f, 0.62f, 0.9f, 0.62f, 0.34f)
-    val t = if (live) {
+    val name = stringResource(if (live) R.string.shell_back_to_call else R.string.shell_talk)
+    val t = if (live && !reducedMotion()) {
         rememberInfiniteTransition(label = "bars").animateFloat(0f, 6.2832f, infiniteRepeatable(tween(1047, easing = LinearEasing)), label = "t").value
     } else 0f
     Box(
-        Modifier.size(size).clip(CircleShape).background(c.accent).pressable(label = stringResource(R.string.shell_voice), haptic = Haptic.Medium, onClick = onClick),
+        // pressable's label is only the action ("double-tap to…"); the bars carry no text, so the button needs a name.
+        Modifier.size(size).clip(CircleShape).background(c.accent)
+            .semantics { contentDescription = name }
+            .pressable(label = stringResource(R.string.shell_voice), haptic = Haptic.Medium, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         val bar = size / 18.7f
         Row(Modifier.size(width = bar * 10, height = size * 0.4f), horizontalArrangement = Arrangement.spacedBy(bar), verticalAlignment = Alignment.CenterVertically) {
             rest.forEachIndexed { i, r ->
-                val h = if (live) (r + 0.3f * sin(t + 1.1f * i)).coerceIn(0.22f, 1f) else r
+                val h = if (t != 0f) (r + 0.3f * sin(t + 1.1f * i)).coerceIn(0.22f, 1f) else r
                 Box(Modifier.width(bar).fillMaxHeight(h).clip(CircleShape).background(c.onAccent))
             }
         }

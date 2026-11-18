@@ -90,6 +90,12 @@
     <string name="chatscreen_choice_session">Permitir en sesión</string>
     <string name="chatscreen_choice_always">Siempre</string>
     <string name="chatscreen_choice_deny">Rechazar</string>
+    <string name="chatscreen_more_options">Más opciones</string>
+    <string name="chatscreen_copied">Copiado</string>
+    <string name="chatscreen_thinking_live">pensando…</string>
+    <string name="chatscreen_starter_pulse">Resume mi Pulse</string>
+    <string name="chatscreen_starter_tasks">¿Qué tareas hay en marcha?</string>
+    <string name="chatscreen_starter_plan">Planifica mi día</string>
 
     <!-- chat/ChatState.kt -->
     <string name="chatstate_busy_queue">Poner en cola</string>
@@ -204,6 +210,7 @@
     <string name="sheets_show_output">Ver salida</string>
     <string name="sheets_stop">Detener</string>
     <string name="sheets_steer_hint">Guiar a este agente…</string>
+    <string name="sheets_steer_label">Guiar a este agente</string>
     <string name="sheets_send">Enviar</string>
 
     <!-- chat/Cards.kt -->
@@ -291,6 +298,10 @@
     <string name="chatsscreen_host_folder_hint">/home/usuario/proyecto</string>
     <string name="chatsscreen_create">Crear</string>
     <string name="chatsscreen_save">Guardar</string>
+    <string name="chatsscreen_artifacts">Artefactos</string>
+    <string name="chatsscreen_no_chats_hint">Empieza uno con Nuevo chat.</string>
+    <string name="chatsscreen_no_projects">Todavía no hay proyectos.</string>
+    <string name="chatsscreen_no_projects_hint">Un proyecto agrupa chats de un mismo tema.</string>
 
     <!-- sessions/ChatsState.kt -->
     <string name="chatsstate_pin_failed">No se pudo fijar: %1$s</string>
@@ -312,6 +323,8 @@
     <string name="chatsstate_with_phone_control">Con control del teléfono</string>
     <string name="chatsstate_untitled">Sin título</string>
     <string name="chatsstate_unnamed_project">Proyecto sin nombre</string>
+    <string name="chatsstate_archived">Chat archivado</string>
+    <string name="chatsstate_image_attached">Imagen adjunta</string>
 
     <!-- sessions/Artifacts.kt -->
     <string name="artifacts_all">Todo</string>
@@ -321,21 +334,25 @@
     <string name="artifacts_links">Enlaces</string>
     <string name="artifacts_today">Hoy</string>
     <string name="artifacts_yesterday">Ayer</string>
-    <string name="artifacts_read_failed">No se pudieron leer los artifacts: %1$s</string>
+    <string name="artifacts_read_failed">No se pudieron leer los artefactos: %1$s</string>
     <string name="artifacts_unexpected">respuesta inesperada</string>
     <string name="artifacts_search_hint">Buscar nombres y chats</string>
     <string name="artifacts_clear">Borrar</string>
     <string name="artifacts_show_missing">Mostrar los que faltan</string>
-    <string name="artifacts_needs_plugin">Los artifacts necesitan el plugin de AllFather en el host de Hermes. Instálalo o actualízalo en Ajustes > Plugin de AllFather.</string>
+    <string name="artifacts_needs_plugin">Los artefactos necesitan el plugin de AllFather.</string>
     <string name="artifacts_retry">Reintentar</string>
     <string name="artifacts_none_of_kind">No hay %1$s en tus chats.</string>
     <string name="artifacts_missing_hint">Activa «Mostrar los que faltan» para ver también los que ya no están en el host.</string>
-    <string name="artifacts_empty">Todavía no hay artifacts. Los archivos, páginas y enlaces de tus chats aparecen aquí cuando %1$s los guarda.</string>
+    <string name="artifacts_empty">Todavía no hay artefactos.</string>
     <string name="artifacts_no_match">Nada coincide con «%1$s».</string>
     <string name="artifacts_load_more">Cargar más</string>
     <string name="artifacts_missing_title">Este archivo ya no está en el host de Hermes, o no se puede abrir aquí (máx. 16 MB).</string>
     <string name="artifacts_ok">Aceptar</string>
     <string name="artifacts_gone">Ya no está</string>
+    <string name="artifacts_eyebrow">Biblioteca</string>
+    <string name="artifacts_title">Artefactos</string>
+    <string name="artifacts_needs_plugin_hint">Instálalo o actualízalo en Ajustes &gt; Plugin de AllFather.</string>
+    <string name="artifacts_empty_hint">Los archivos, páginas y enlaces de tus chats aparecen aquí cuando %1$s los guarda.</string>
 
     <!-- sharesheet/ShareActivity.kt -->
     <string name="shareactivity_not_added">No se añadió: %1$s (máx. %2$d MB)</string>

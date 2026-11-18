@@ -51,6 +51,7 @@
     <string name="tasksscreen_scheduled_unread">Programadas · %1$d</string>
     <string name="tasksscreen_all">Todos</string>
     <string name="tasksscreen_no_tasks">No hay tareas en este tablero.</string>
+    <string name="tasksscreen_create_hint">Crea una con el botón +.</string>
     <string name="tasksscreen_status_button">Estado: %1$s</string>
     <string name="tasksscreen_assigned">Asignada: %1$s</string>
     <string name="tasksscreen_nobody">nadie</string>
@@ -68,6 +69,8 @@
     <string name="tasksscreen_comments_title">Comentarios</string>
     <string name="tasksscreen_reply_unblock">Responder y desbloquear…</string>
     <string name="tasksscreen_comment_hint">Comentar…</string>
+    <string name="tasksscreen_reply_unblock_label">Responder y desbloquear</string>
+    <string name="tasksscreen_comment_label">Comentar</string>
     <string name="tasksscreen_send">Enviar</string>
     <string name="tasksscreen_worker_log">Ver registro del trabajador</string>
     <string name="tasksscreen_history">Historial: %1$s</string>

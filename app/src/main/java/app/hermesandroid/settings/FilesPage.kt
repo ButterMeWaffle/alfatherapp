@@ -113,7 +113,7 @@ fun FilesPage(graph: AppGraph) {
         home?.takeIf { it != p }?.let { h -> SettingsButton(stringResource(R.string.filespage_home), AF.Home) { path = h } }
     }
     Text(p, style = CType.footnote.copy(fontFamily = CType.mono), color = c.secondary, modifier = Modifier.horizontalScroll(rememberScrollState()))
-    error?.let { Text(it, style = CType.footnote, color = c.red) }
+    error?.let { app.hermesandroid.ui.components.ErrorState(it, inset = 0.dp) }
     val list = entries
     Column(Modifier.fillMaxWidth().settingsCard(RoundedCornerShape(20.dp))) {
         when {

@@ -1,5 +1,7 @@
 package app.hermesandroid.settings
 
+import app.hermesandroid.ui.components.Skeleton
+import app.hermesandroid.ui.components.ErrorState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -53,16 +55,16 @@ fun ToolsTab(s: CapabilitiesState, q: String) {
         if (!s.toolsLoaded) s.loadToolsets()
         if (s.toolCalls == null) s.loadToolCalls()
     }
-    if (!s.toolsLoaded) { Loading(); return }
-    s.toolsError?.let { Text(it, style = CType.footnote, color = c.red); SettingsButton(stringResource(R.string.capabilities_retry)) { scope.launch { s.loadToolsets() } }; return }
-    error?.let { Text(it, style = CType.footnote, color = c.red) }
+    if (!s.toolsLoaded) { Skeleton(); return }
+    s.toolsError?.let { ErrorState(it) { scope.launch { s.loadToolsets() } }; return }
+    error?.let { ErrorState(it) }
     val list = s.toolsets.filter { it.matches(q) }.sortedWith(compareBy<Toolset> { if (mostUsedFirst) -s.calls(it) else s.calls(it) }.thenBy { it.label.lowercase() })
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(stringResource(R.string.toolstab_active, s.toolsets.count { it.enabled }, s.toolsets.size), style = CType.footnote, color = c.secondary, modifier = Modifier.weight(1f).padding(start = 16.dp))
         Text(stringResource(if (mostUsedFirst) R.string.toolstab_most_used_first else R.string.toolstab_least_used_first), style = CType.footnote.semibold(), color = c.accent, modifier = Modifier.pressable { mostUsedFirst = !mostUsedFirst }.padding(8.dp))
     }
     CapSection(stringResource(R.string.toolstab_toolsets), stringResource(R.string.capabilities_new_sessions)) {
-        if (list.isEmpty()) Empty(if (q.isEmpty()) stringResource(R.string.toolstab_no_tools) else stringResource(R.string.capabilities_no_match, q))
+        if (list.isEmpty()) Empty(stringResource(R.string.toolstab_no_tools), q)
         list.forEachIndexed { i, t ->
             val pills = buildList {
                 if (t.tools.isNotEmpty()) add(pluralStringResource(R.plurals.capabilities_tools, t.tools.size, t.tools.size) to null)
@@ -70,7 +72,7 @@ fun ToolsTab(s: CapabilitiesState, q: String) {
                 if (t.configured == false) add(stringResource(R.string.toolstab_needs_keys) to c.orange)
             }
             CapRow(t.label, t.description, i == 0, pills, onClick = { open = t.name }) {
-                CapSwitch(t.enabled) { on -> scope.launch { error = s.toggleToolset(t.name, on) } }
+                CapSwitch(t.enabled, t.label) { on -> scope.launch { error = s.toggleToolset(t.name, on) } }
             }
         }
     }

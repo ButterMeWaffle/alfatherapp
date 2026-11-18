@@ -1,5 +1,7 @@
 package app.hermesandroid.ui.theme
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -86,7 +88,7 @@ val AllFatherColors = AfColors(
     canvas = Color(0xFF0F0F10),
     composer = Color(0xFF1A1A1B),
     composerStroke = Color.White.copy(alpha = 0.08f),
-    red = Color(0xFFE5484D),
+    red = Color(0xFFEC5D5E), // Radix red10: >= 4.5:1 on every surface (red9 #E5484D was 3.85-4.44 off the canvas)
     orange = Color(0xFFF0B04A),
     yellow = Color(0xFFE8C35A),
     blue = Color(0xFFC3CAD6),
@@ -157,6 +159,12 @@ object Motion {
     fun <T> overshoot(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.72f, stiffness = 195f)
     /** Screens sliding over the chat: Material 3's default spatial spring, the drawer's and the sheets' own (~0.3 s). */
     fun <T> page(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.9f, stiffness = 700f)
+    /** Fades and crossfades: short enough to read as a response, not a show (~150 ms). */
+    fun <T> quick(): FiniteAnimationSpec<T> = tween(150, easing = FastOutSlowInEasing)
+    /** Things arriving or moving in place (rows, chips, buttons): critically damped, never bounces (~250 ms). */
+    fun <T> enter(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 380f)
+    /** How far things rise as they arrive. */
+    val rise = 8.dp
 }
 
 object C {
@@ -206,6 +214,6 @@ fun AfTheme(content: @Composable () -> Unit) {
         }
     }
     MaterialTheme(colorScheme = scheme, typography = type, shapes = shapes) {
-        CompositionLocalProvider(LocalAfColors provides AllFatherColors, LocalContentColor provides AllFatherColors.text, content = content)
+        CompositionLocalProvider(LocalAfColors provides AllFatherColors, LocalContentColor provides AllFatherColors.text, LocalReducedMotion provides rememberReducedMotion(), content = content)
     }
 }

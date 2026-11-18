@@ -59,12 +59,12 @@ private fun Said(call: LiveCall, problem: String?, starting: Boolean) {
     val said = if (starting) emptyList() else call.lines.filter { it.second.isNotBlank() }.takeLast(2)
     when {
         failed != null -> Text(failed, style = CType.callout, color = c.red)
-        said.isEmpty() -> Text(stringResource(R.string.assistlive_how_can_i_help), style = CType.title3, color = c.tertiary)
+        said.isEmpty() -> Text(stringResource(R.string.assistlive_how_can_i_help), style = CType.title3, color = c.secondary)
         else -> said.forEachIndexed { i, (_, text) ->
             val latest = i == said.lastIndex
             Text(
                 text.trim().let { if (latest && it.length > 220) "…" + it.takeLast(220) else it },
-                style = if (latest) CType.title3 else CType.callout, color = if (latest) c.text else c.tertiary,
+                style = if (latest) CType.title3 else CType.callout, color = if (latest) c.text else c.secondary,
                 maxLines = if (latest) 5 else 2, overflow = TextOverflow.Ellipsis,
             )
         }

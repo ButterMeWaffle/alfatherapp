@@ -1,5 +1,19 @@
 package app.hermesandroid.login
 
+import app.hermesandroid.ui.theme.AppearWith
+import app.hermesandroid.ui.theme.rise
+import app.hermesandroid.ui.components.ErrorState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.text.input.ImeAction
+import app.hermesandroid.ui.components.ScanLine
+import app.hermesandroid.ui.theme.Appear
+import app.hermesandroid.ui.theme.reducedMotion
+import app.hermesandroid.ui.theme.Motion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -189,6 +203,12 @@ fun LoginScreen(graph: AppGraph) {
     var help by remember { mutableStateOf(false) }
     val others = graph.dashboards.filter { it.id != graph.activeDashboard }
     val returning = others.isNotEmpty() && graph.addingFrom == null
+    // Once per visit: the portrait surfaces, then the name, then the form, each rising a little; only fades under reduced motion.
+    var played by rememberSaveable { mutableStateOf(false) }
+    val still = reducedMotion()
+    val headersName = stringResource(R.string.loginscreen_proxy_headers)
+    val enter = remember { Animatable(if (played || still) 1f else 0f) }
+    LaunchedEffect(Unit) { if (enter.value < 1f) enter.animateTo(1f, tween(900, easing = FastOutSlowInEasing)); played = true }
     Box(Modifier.fillMaxSize()) {
         Backdrop(Modifier.fillMaxSize())
         Column(
@@ -200,15 +220,15 @@ fun LoginScreen(graph: AppGraph) {
                 Image(
                     painterResource(R.drawable.af_login), null,
                     contentScale = ContentScale.Crop, alignment = Alignment.TopCenter,
-                    modifier = Modifier.fillMaxSize().fadeToCanvas(0.4f),
+                    modifier = Modifier.fillMaxSize().rise { enter.value / 0.45f }.fadeToCanvas(0.4f),
                 )
                 if (graph.addingFrom != null) Box(Modifier.statusBarsPadding()) { PageBar(graph::cancelAddDashboard) }
-                Column(Modifier.align(Alignment.BottomCenter), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.align(Alignment.BottomCenter).rise { (enter.value - 0.25f) / 0.45f }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Eyebrow(stringResource(if (returning) R.string.loginscreen_welcome_back else R.string.loginscreen_connect_agent))
                     Wordmark(stringResource(R.string.app_name))
                 }
             }
-            Column(Modifier.widthIn(max = 480.dp).fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 28.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Column(Modifier.widthIn(max = 480.dp).fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 28.dp).rise { (enter.value - 0.45f) / 0.55f }, verticalArrangement = Arrangement.spacedBy(18.dp)) {
                 if (returning) Column(Modifier.fillMaxWidth().settingsCard(Radii.lg)) {
                     others.forEachIndexed { i, d ->
                         SettingsRow(AF.Dns, d.url.substringAfter("://"), detail = d.username.ifBlank { null }, first = i == 0) { graph.switchDashboard(d.id) }
@@ -216,7 +236,7 @@ fun LoginScreen(graph: AppGraph) {
                 }
                 AfField(
                     s.url, { s.url = it }, label = stringResource(R.string.loginscreen_server), placeholder = stringResource(R.string.loginscreen_server_hint),
-                    keyboard = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    keyboard = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
                     trailing = {
                         CapsuleIcon(AF.ContentPaste, stringResource(R.string.loginscreen_paste), tint = c.secondary) { clipboard.getText()?.text?.let(s::prefill) }
                         CapsuleIcon(AF.QrCodeScanner, stringResource(R.string.loginscreen_scan), tint = c.secondary) {
@@ -225,20 +245,22 @@ fun LoginScreen(graph: AppGraph) {
                         }
                     },
                 )
-                AfField(s.user, { s.user = it }, label = stringResource(R.string.loginscreen_username), placeholder = stringResource(R.string.loginscreen_username_hint))
+                AfField(s.user, { s.user = it }, label = stringResource(R.string.loginscreen_username), placeholder = stringResource(R.string.loginscreen_username_hint), keyboard = KeyboardOptions(imeAction = ImeAction.Next))
                 AfField(
                     s.pass, { s.pass = it },
                     label = stringResource(R.string.loginscreen_password), placeholder = stringResource(R.string.loginscreen_password_hint),
-                    keyboard = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    keyboard = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                     visual = if (reveal) VisualTransformation.None else PasswordVisualTransformation(),
                     trailing = {
                         CapsuleIcon(if (reveal) AF.VisibilityOff else AF.Visibility, stringResource(if (reveal) R.string.loginscreen_hide else R.string.loginscreen_show), tint = c.secondary) { reveal = !reveal }
                     },
                 )
-                s.error?.let { ErrorCard(it) }
+                AppearWith(s.error) { ErrorState(it, inset = 0.dp) }
                 PrimaryButton(stringResource(R.string.loginscreen_connect), enabled = s.url.isNotBlank(), busy = s.busy, onClick = s::submit)
+                // While it connects the light sweeps under the button, as everywhere the agent is at work.
+                Appear(s.busy) { ScanLine(Modifier.fillMaxWidth()) }
                 s.oauth.forEach { p -> SettingsButton(stringResource(R.string.loginscreen_continue_with, p.title), AF.Login, prominent = true) { s.signInWith(ctx, p) } }
-                Column(Modifier.fillMaxWidth().animateContentSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(Modifier.fillMaxWidth().animateContentSize(Motion.ease()), horizontalAlignment = Alignment.CenterHorizontally) {
                     if (s.oauth.isEmpty()) TextLink(stringResource(R.string.loginscreen_other_methods), enabled = s.url.isNotBlank() && !s.busy, onClick = s::discover)
                     TextLink(stringResource(if (advanced) R.string.loginscreen_hide_advanced else R.string.loginscreen_advanced)) { advanced = !advanced }
                     // Advanced: Cloudflare Access service token and proxy headers (CloudflareAccess / CustomHeaders).
@@ -249,15 +271,15 @@ fun LoginScreen(graph: AppGraph) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Eyebrow(stringResource(R.string.loginscreen_proxy_headers))
                             Box(Modifier.fillMaxWidth().heightIn(min = 80.dp).well(Radii.md).padding(14.dp)) {
-                                if (s.headers.isEmpty()) Text("X-Pangolin-Token: …", style = CType.data, color = c.tertiary)
-                                BasicTextField(s.headers, { s.headers = it }, textStyle = CType.data.copy(color = c.text), cursorBrush = SolidColor(c.accent), modifier = Modifier.fillMaxWidth())
+                                if (s.headers.isEmpty()) Text("X-Pangolin-Token: …", style = CType.data, color = c.secondary)
+                                BasicTextField(s.headers, { s.headers = it }, textStyle = CType.data.copy(color = c.text), cursorBrush = SolidColor(c.accent), modifier = Modifier.fillMaxWidth().semantics { contentDescription = headersName })
                             }
                             Text(stringResource(R.string.loginscreen_headers_hint), style = CType.caption, color = c.secondary)
                         }
                     }
                     TextLink(stringResource(R.string.loginscreen_need_help)) { help = true }
                 }
-                Text(stringResource(R.string.loginscreen_stays_here), style = CType.caption, color = c.tertiary, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                Text(stringResource(R.string.loginscreen_stays_here), style = CType.caption, color = c.secondary, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
             }
         }
     }
@@ -272,17 +294,6 @@ private fun TextLink(text: String, enabled: Boolean = true, onClick: () -> Unit)
         modifier = Modifier.fillMaxWidth().pressable(enabled = enabled, onClick = onClick).padding(vertical = 10.dp),
     )
 
-@Composable
-private fun ErrorCard(text: String) {
-    val c = C.colors
-    Row(
-        Modifier.fillMaxWidth().background(c.red.copy(alpha = 0.07f), Radii.md).border(Dp.Hairline, c.red.copy(alpha = 0.3f), Radii.md).padding(14.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Icon(AF.Warning, null, tint = c.red, modifier = Modifier.size(18.dp))
-        Text(text, style = CType.subheadline, color = c.text)
-    }
-}
 
 /** The "Ask Hermes" setup prompt: Hermes sets up the dashboard and sends a sign-in link. */
 private const val SETUP_PROMPT = """I want to use the AllFather Android app on my phone to talk to you. It signs in to the Hermes web dashboard (the one started by `hermes dashboard`, default port 9119). Please set everything up and then tell me what to enter in the app.

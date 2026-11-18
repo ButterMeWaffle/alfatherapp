@@ -51,6 +51,7 @@
     <string name="tasksscreen_scheduled_unread">Scheduled · %1$d</string>
     <string name="tasksscreen_all">All</string>
     <string name="tasksscreen_no_tasks">No tasks on this board.</string>
+    <string name="tasksscreen_create_hint">Create one with the + button.</string>
     <string name="tasksscreen_status_button">Status: %1$s</string>
     <string name="tasksscreen_assigned">Assigned to: %1$s</string>
     <string name="tasksscreen_nobody">nobody</string>
@@ -68,6 +69,8 @@
     <string name="tasksscreen_comments_title">Comments</string>
     <string name="tasksscreen_reply_unblock">Reply and unblock…</string>
     <string name="tasksscreen_comment_hint">Comment…</string>
+    <string name="tasksscreen_reply_unblock_label">Reply and unblock</string>
+    <string name="tasksscreen_comment_label">Comment</string>
     <string name="tasksscreen_send">Send</string>
     <string name="tasksscreen_worker_log">See the worker\'s log</string>
     <string name="tasksscreen_history">History: %1$s</string>

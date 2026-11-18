@@ -153,7 +153,7 @@ private fun BubbleCard(b: Bubble) {
                         Phase.Stopping -> stringResource(R.string.controlbubble_stopping)
                         Phase.Done -> stringResource(R.string.controlbubble_done)
                     })
-                    if (b.steps > 0) Text("${b.steps}/$MAX_STEPS", style = CType.data, color = c.tertiary)
+                    if (b.steps > 0) Text("${b.steps}/$MAX_STEPS", style = CType.data, color = c.secondary)
                 }
                 Text(b.line, style = CType.subheadline, color = c.text, maxLines = if (busy) 1 else 3, overflow = TextOverflow.Ellipsis)
             }

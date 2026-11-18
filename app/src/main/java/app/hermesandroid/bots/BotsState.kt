@@ -61,7 +61,9 @@ class BotsState(private val graph: AppGraph, private val context: Context) {
     val bots = mutableStateListOf<Bot>()
     var error by mutableStateOf<String?>(null)
         private set
-    var notice by mutableStateOf<String?>(null)
+    /** The roster answered at least once (the list shows its skeleton until then). */
+    var loaded by mutableStateOf(false)
+        private set
 
     val rooms = mutableStateListOf<Room>()
     var groupsAvailable by mutableStateOf(true)
@@ -74,22 +76,21 @@ class BotsState(private val graph: AppGraph, private val context: Context) {
         private set
     private var cursor = 0
 
-    fun load() {
-        graph.scope.launch {
-            try {
-                // Gateway-wide listing: sent unscoped so the active profile never shrinks the roster.
-                val r = client.call("profiles.list", null, scoped = false).obj()
-                val list = (r?.get("profiles") as? JsonArray).orEmpty().mapNotNull { it.obj()?.let(::botOf) }
-                bots.clear()
-                // Hermes (default) always first: it's the orchestrator the other bots work under.
-                bots.addAll(list.sortedWith(compareBy({ !it.isDefault }, { !it.pinned }, { -(it.lastActive ?: 0.0) })))
-                error = null
-                list.filter { it.name !in graph.avatars }.forEach { loadAvatar(it.name) }
-            } catch (e: Exception) {
-                error = if (e.message?.contains("method", true) == true) tr(R.string.botsstate_update_hermes) else e.message
-            }
-            loadRooms()
+    fun load() = graph.scope.launch {
+        try {
+            // Gateway-wide listing: sent unscoped so the active profile never shrinks the roster.
+            val r = client.call("profiles.list", null, scoped = false).obj()
+            val list = (r?.get("profiles") as? JsonArray).orEmpty().mapNotNull { it.obj()?.let(::botOf) }
+            bots.clear()
+            // Hermes (default) always first: it's the orchestrator the other bots work under.
+            bots.addAll(list.sortedWith(compareBy({ !it.isDefault }, { !it.pinned }, { -(it.lastActive ?: 0.0) })))
+            error = null
+            list.filter { it.name !in graph.avatars }.forEach { loadAvatar(it.name) }
+        } catch (e: Exception) {
+            error = if (e.message?.contains("method", true) == true) tr(R.string.botsstate_update_hermes) else e.message
         }
+        loaded = true
+        loadRooms()
     }
 
     private suspend fun loadAvatar(name: String) = runCatching {
@@ -166,7 +167,7 @@ class BotsState(private val graph: AppGraph, private val context: Context) {
 
     private fun act(failure: String, block: suspend () -> Unit) {
         graph.scope.launch {
-            try { block() } catch (e: Exception) { notice = "$failure: ${e.message}" }
+            try { block() } catch (e: Exception) { graph.notify("$failure: ${e.message}") }
         }
     }
 
@@ -231,7 +232,7 @@ class BotsState(private val graph: AppGraph, private val context: Context) {
             context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE), null, null, null)?.use { c ->
                 if (c.moveToFirst()) { name = c.getString(0) ?: name; size = c.getLong(1) }
             }
-            if (size > ROOM_FILE_MAX) notice = tr(R.string.botsstate_file_too_big, name) else roomFiles += RoomFile(uri, name, size)
+            if (size > ROOM_FILE_MAX) graph.notify(tr(R.string.botsstate_file_too_big, name)) else roomFiles += RoomFile(uri, name, size)
         }
     }
 

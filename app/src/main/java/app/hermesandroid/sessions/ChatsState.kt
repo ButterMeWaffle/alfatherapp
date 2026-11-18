@@ -94,6 +94,8 @@ class ChatsState(private val graph: AppGraph, private val context: Context) {
     val projects = mutableStateListOf<Project>()
     var projectsError by mutableStateOf<String?>(null)
         private set
+    var projectsLoaded by mutableStateOf(false)
+        private set
     var openProject by mutableStateOf<Project?>(null)
     val lanes = mutableStateListOf<Lane>()
 
@@ -128,7 +130,7 @@ class ChatsState(private val graph: AppGraph, private val context: Context) {
             try {
                 val rows = page(0)
                 sessions.clear()
-                sessions.addAll(rows)
+                sessions.addAll(rows.withPending())
                 if (filter == Filter.All) app.hermesandroid.sharesheet.publishChatShortcuts(context, listed, graph.profile, graph.store.activeId)
                 hasMore = rows.size >= PAGE
                 seedSeen(rows)
@@ -149,7 +151,7 @@ class ChatsState(private val graph: AppGraph, private val context: Context) {
             runCatching {
                 val rows = page(sessions.size)
                 val known = sessions.map { it.id }.toSet()
-                sessions.addAll(rows.filter { it.id !in known })
+                sessions.addAll(rows.filter { it.id !in known }.withPending())
                 hasMore = rows.size >= PAGE
                 seedSeen(rows)
             }
@@ -256,16 +258,41 @@ class ChatsState(private val graph: AppGraph, private val context: Context) {
 
     // ---- mutations (PATCH / DELETE /api/sessions/{id} with the mutation identity) ----
 
-    fun setPinned(row: SessionRow, pinned: Boolean) = act(R.string.chatsstate_pin_failed) {
-        mutate(row, buildJsonObject { put("pinned", pinned) })
-        replace(row.id) { it.copy(pinned = pinned) }
+    /**
+     * Changes shown before the host has them (row id → how the row looks meanwhile, null = gone from this list). A refresh
+     * that lands while one is in flight (sessions.changed fires mid-request) re-applies them instead of undoing them.
+     */
+    private val pending = mutableMapOf<String, (SessionRow) -> SessionRow?>()
+
+    private fun List<SessionRow>.withPending() = mapNotNull { r -> val f = pending[r.id]; if (f == null) r else f(r) }
+
+    /** Holds [shown] over refreshes until [block] is done; a later change to the same row supersedes it. */
+    private suspend fun held(id: String, shown: (SessionRow) -> SessionRow?, block: suspend () -> Unit) {
+        pending[id] = shown
+        try { block() } finally { if (pending[id] === shown) pending.remove(id) }
     }
 
-    fun setArchived(row: SessionRow, archived: Boolean) = act(R.string.chatsstate_archive_failed) {
-        mutate(row, buildJsonObject { put("archived", archived) })
-        // Leaves the list only if it no longer belongs to what's shown (the filter may have changed meanwhile).
-        if (archived != (filter == Filter.Archived)) sessions.removeAll { it.id == row.id } else replace(row.id) { it.copy(archived = archived) }
-        if (!archived && filter != Filter.Archived && sessions.none { it.id == row.id }) refresh()
+    fun setPinned(row: SessionRow, pinned: Boolean) {
+        val shown = { r: SessionRow -> r.copy(pinned = pinned) }
+        replace(row.id, shown)
+        act(R.string.chatsstate_pin_failed, revert = { replace(row.id) { it.copy(pinned = row.pinned) } }) {
+            held(row.id, shown) { mutate(row, buildJsonObject { put("pinned", pinned) }) }
+        }
+    }
+
+    /** Leaves (or changes in) the list at once; archiving offers Undo, which puts the row back where it was. */
+    fun setArchived(row: SessionRow, archived: Boolean) {
+        val at = sessions.indexOfFirst { it.id == row.id }
+        // Leaves the list only if it no longer belongs to what's shown.
+        val leaves = archived != (filter == Filter.Archived)
+        val shown = { r: SessionRow -> if (leaves) null else r.copy(archived = archived) }
+        replace(row.id, shown)
+        val restore = { if (leaves && at >= 0 && sessions.none { it.id == row.id }) sessions.add(at.coerceAtMost(sessions.size), row) else replace(row.id) { row } }
+        if (archived) graph.notify(tr(R.string.chatsstate_archived), undo = { restore(); setArchived(row.copy(archived = true), false) })
+        act(R.string.chatsstate_archive_failed, revert = restore) {
+            held(row.id, shown) { mutate(row, buildJsonObject { put("archived", archived) }) }
+            if (!archived && filter != Filter.Archived && sessions.none { it.id == row.id }) refresh()
+        }
     }
 
     /** session.title on the live runtime when this chat is open, else the stored-session PATCH. */
@@ -290,20 +317,25 @@ class ChatsState(private val graph: AppGraph, private val context: Context) {
         if (openProject != null) openProject?.let(::openProjectPage)
     }
 
-    /** [failure]: a "Couldn't …: %1$s" text, given the error's message. */
-    private fun act(@StringRes failure: Int, block: suspend () -> Unit) {
+    /** A change on one chat: a refusal undoes what was shown ([revert]) and says why in the notice.
+     *  [failure]: a "Couldn't …: %1$s" text, given the error's message. */
+    private fun act(@StringRes failure: Int, revert: () -> Unit = {}, block: suspend () -> Unit) {
         graph.scope.launch {
             try {
                 block()
             } catch (e: Exception) {
-                error = tr(failure, e.message.toString())
+                revert()
+                graph.notify(tr(failure, e.message.toString()))
             }
         }
     }
 
-    private fun replace(id: String, f: (SessionRow) -> SessionRow) {
+    /** A null result takes the row out of the list. */
+    private fun replace(id: String, f: (SessionRow) -> SessionRow?) {
         val i = sessions.indexOfFirst { it.id == id }
-        if (i >= 0) sessions[i] = f(sessions[i])
+        if (i < 0) return
+        val r = f(sessions[i])
+        if (r == null) sessions.removeAt(i) else sessions[i] = r
     }
 
     /** The helper bot a chat belongs to, when it isn't the active profile (its row says so). */
@@ -361,7 +393,7 @@ class ChatsState(private val graph: AppGraph, private val context: Context) {
                 val shown = visible().map { it.id }.toSet()
                 searchHits.addAll((r?.get("results") as? JsonArray).orEmpty().mapNotNull { it.obj() }.mapNotNull { row ->
                     val id = row.str("session_id") ?: row.str("id") ?: return@mapNotNull null
-                    if (id in shown) null else SearchHit(id, row.str("title"), row.str("snippet").orEmpty())
+                    if (id in shown) null else SearchHit(id, row.str("title")?.let(::readablePreview), row.str("snippet").orEmpty())
                 }.distinctBy { it.id })
             }
             searching = false
@@ -387,6 +419,7 @@ class ChatsState(private val graph: AppGraph, private val context: Context) {
             } catch (e: Exception) {
                 projectsError = if (e.message?.contains("not found", true) == true || e.message?.contains("method", true) == true) tr(R.string.chatsstate_no_projects) else e.message
             }
+            projectsLoaded = true
         }
     }
 
@@ -447,15 +480,19 @@ class ChatsState(private val graph: AppGraph, private val context: Context) {
             p.startsWith("[Phone assistant") -> tr(R.string.chatsstate_from_assistant)
             p.startsWith("<system-reminder>\n[Helper council on") -> tr(R.string.chatsstate_with_helpers)
             p.startsWith("<system-reminder>") -> tr(R.string.chatsstate_with_phone_control)
+            // Hermes puts the image path first: show the words after it.
+            p.startsWith("[Image attached") -> p.substringAfter("]", "").trim().ifEmpty { tr(R.string.chatsstate_image_attached) }
             else -> p
         }
 
         fun rowOf(s: JsonObject): SessionRow? {
             val id = s.str("session_id") ?: s.str("id") ?: return null
-            val title = s.str("title")?.takeIf { it.isNotBlank() } ?: s.str("preview")?.takeIf { it.isNotBlank() } ?: tr(R.string.chatsstate_untitled)
+            // Hermes titles untitled chats with the first message, cut short: clean the title as well as the preview.
+            val preview = s.str("preview")?.let(::readablePreview)
+            val title = s.str("title")?.takeIf { it.isNotBlank() }?.let(::readablePreview) ?: preview?.takeIf { it.isNotBlank() } ?: tr(R.string.chatsstate_untitled)
             val updated = listOf("last_active", "updated_at", "started_at", "created_at").firstNotNullOfOrNull { s.num(it) } ?: 0.0
             return SessionRow(
-                id, title, s.str("preview")?.let(::readablePreview)?.takeIf { it != title },
+                id, title, preview?.takeIf { it != title },
                 if (updated > 4e10) updated / 1000 else updated,
                 s.str("source") ?: "chat", s.bool("pinned") == true, s.bool("archived") == true,
                 s.num("message_count")?.toInt() ?: 0, s.str("profile"),
