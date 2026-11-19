@@ -97,6 +97,8 @@ doesn't freeze.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): build notes and library gotchas.
 
 ## Credits
+- AllFather started as an Android port of [Conduit](https://github.com/kaishi00/hermes-conduit), kaishi00's iOS client for
+  Hermes Agent (MIT), and uses its host plugin and relay protocol.
 - Fonts: [Geist](https://vercel.com/font) (SIL OFL). Icons: [Lucide](https://lucide.dev) (ISC).
 - Bundled: [KaTeX](https://katex.org) and [Mermaid](https://mermaid.js.org) (MIT).
 - Phone-control ideas from [buddy-android](https://github.com/ghorbelhamdi/buddy-android) (Apache-2.0).
@@ -131,6 +133,9 @@ hermes plugins install kaishi00/hermes-conduit-notifier --enable
 `google-services.json` en `app/`, recompila y levanta el relay de [`relay/`](relay/README.md) en tu host.
 
 **Skills del host:** copia las carpetas de [`host/skills/`](host/skills) a `~/.hermes/skills/`.
+
+**Créditos:** AllFather nació como port a Android de [Conduit](https://github.com/kaishi00/hermes-conduit), el cliente
+de iOS de kaishi00 para Hermes Agent (MIT), y usa su plugin del host y el protocolo de su relay.
 
 **Ajustes del host (opcional):** [`host/TUNING.md`](host/TUNING.md) trae un parche que arregla la compresión de
 contexto con OAuth de Anthropic (sin él, el chat de Pulse reenvía todo su historial en cada turno), modelos
