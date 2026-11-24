@@ -38,7 +38,7 @@
 | **Pulse** | Your agent's proactive cards: what it noticed on its own, rated by you. |
 | **Voice** | Dictation, read aloud, Gemini Live calls and a wake phrase. |
 | **Assistant** | Hold the power button. Phone control through an accessibility service asks before sending, paying or deleting, and never touches passwords, banking or password-manager apps. |
-| **Notifications** | FCM, end-to-end encrypted: replies, approvals, calls and live progress. |
+| **Notifications** | FCM, end-to-end encrypted: replies, approvals, calls and live progress. Needs your own build with a Firebase project: the release APK has no push ([how](#push-notifications-optional)). |
 | **Sharing** | Opt-in and end-to-end encrypted: calendar, phone state, location, Health Connect. |
 | **Wear OS** | Ask by voice and hear the answer; tile and complication. |
 | **Everywhere** | Share target, launcher shortcuts, home-screen widget, Quick Settings tile. English and Spanish UI. |
@@ -48,6 +48,12 @@ Download `AllFather.apk` (and `AllFatherWatch.apk` for the watch) from the
 [latest release](https://github.com/JusticeFist/alfatherapp/releases/latest) and open it on your phone. Android asks
 once to allow installs from your browser or file manager. The phone and watch APKs share one signing key, so take
 both from the same release.
+
+Coming from 1.0 or 1.1? Since 1.1.1 releases are signed with a dedicated release key, and Android won't update an
+app across keys: uninstall the old version first (phone and watch), then install the new one and sign in again.
+
+The release APK has no push notifications: they need your own build with your own Firebase project
+([Push notifications](#push-notifications-optional)). Everything else works without them.
 
 ## What you need
 - A Hermes host running the web dashboard (`hermes dashboard`, port 9119 by default) that your phone can reach
@@ -65,7 +71,9 @@ JDK 17 or newer and the Android SDK (`ANDROID_HOME`, or `sdk.dir` in `local.prop
 ./gradlew testDebugUnitTest :app:assembleRelease :wear:assembleRelease
 ```
 APKs land in `app/build/outputs/apk/release/` and `wear/build/outputs/apk/release/`. Release builds are signed
-with your debug key: install the phone and watch APKs from the same machine (they must share the signing key).
+with your debug key, or with your own key if a `keystore.properties` at the repo root sets `storeFile`,
+`storePassword`, `keyAlias` and `keyPassword` (it's gitignored). Install the phone and watch APKs from the same
+machine (they must share the signing key).
 ```bash
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
@@ -117,6 +125,9 @@ bots y un asistente en el botón de encendido. La interfaz está en inglés y es
 
 **Instalar:** descarga `AllFather.apk` (y `AllFatherWatch.apk` para el reloj) de la
 [última versión](https://github.com/JusticeFist/alfatherapp/releases/latest) y ábrelo en el teléfono.
+Si vienes de la 1.0 o la 1.1, desinstala primero la versión vieja (teléfono y reloj): desde la 1.1.1 las
+versiones se firman con otra clave y Android no actualiza entre claves distintas. El APK publicado no trae
+notificaciones push: hacen falta tu propia compilación y tu proyecto de Firebase (abajo).
 
 **Necesitas** un host de Hermes con el dashboard (`hermes dashboard`, puerto 9119) accesible desde el teléfono, y
 el plugin del host:

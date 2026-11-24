@@ -1,8 +1,14 @@
+import java.util.Properties
 import java.util.zip.GZIPOutputStream
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// Same release key as the phone app (keystore.properties at the repo root, else the debug key).
+val releaseKey = rootProject.file("keystore.properties").takeIf { it.exists() }?.let { f ->
+    Properties().apply { f.inputStream().use { load(it) } }
 }
 
 // The watch half of AllFather: same applicationId and signing key as the phone app, which is what lets
@@ -15,15 +21,24 @@ android {
         applicationId = "app.allfather"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.1"
+    }
+
+    signingConfigs {
+        if (releaseKey != null) create("release") {
+            storeFile = rootProject.file(releaseKey.getProperty("storeFile"))
+            storePassword = releaseKey.getProperty("storePassword")
+            keyAlias = releaseKey.getProperty("keyAlias")
+            keyPassword = releaseKey.getProperty("keyPassword")
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {

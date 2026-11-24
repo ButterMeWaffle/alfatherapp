@@ -1,3 +1,4 @@
+import java.util.Properties
 import java.util.zip.GZIPOutputStream
 
 // Firebase options read from google-services.json (the user's own project) instead of the Google Services
@@ -17,6 +18,12 @@ val firebase: Map<String, String> = file("google-services.json").takeIf { it.exi
     )
 } ?: emptyMap()
 
+// Release key from keystore.properties at the repo root (gitignored: storeFile, storePassword, keyAlias,
+// keyPassword). Without the file, release builds fall back to your debug key so anyone can still build.
+val releaseKey = rootProject.file("keystore.properties").takeIf { it.exists() }?.let { f ->
+    Properties().apply { f.inputStream().use { load(it) } }
+}
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -31,17 +38,25 @@ android {
         applicationId = "app.allfather"
         minSdk = 29
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.1.1"
         listOf("FCM_APP_ID", "FCM_API_KEY", "FCM_PROJECT_ID", "FCM_SENDER_ID").forEach { buildConfigField("String", it, "\"${firebase[it].orEmpty()}\"") }
+    }
+
+    signingConfigs {
+        if (releaseKey != null) create("release") {
+            storeFile = rootProject.file(releaseKey.getProperty("storeFile"))
+            storePassword = releaseKey.getProperty("storePassword")
+            keyAlias = releaseKey.getProperty("keyAlias")
+            keyPassword = releaseKey.getProperty("keyPassword")
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            // ponytail: release signed with the debug key until there's a Play Store listing
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
         // Baseline Profile collection only (.tools/baseline.sh): release without R8, so the profile names real
         // classes; profileable from src/nonMinifiedRelease. Same id and key: it installs over the app keeping its data.
