@@ -297,4 +297,16 @@
     <string name="filespage_empty">Empty folder.</string>
     <string name="filespage_first_500">Showing the first 500 items.</string>
     <string name="filespage_truncated">Preview cut short: the file is bigger.</string>
+    <string name="settingsscreen_page_appearance">Appearance</string>
+    <string name="settingsscreen_appearance_detail">Portrait</string>
+    <string name="appearancepage_portrait">Portrait</string>
+    <string name="appearancepage_portrait_help">Replaces AllFather\'s own portrait in the chat, the sidebar, the lock screen and the assistant.</string>
+    <string name="appearancepage_using_custom">Using your picture</string>
+    <string name="appearancepage_using_default">Using the app\'s portrait</string>
+    <string name="appearancepage_square_help">Cropped to a square and stored on this phone only.</string>
+    <string name="appearancepage_pick">Choose a picture</string>
+    <string name="appearancepage_replace">Replace the picture</string>
+    <string name="appearancepage_working">Preparing…</string>
+    <string name="appearancepage_reset">Back to the app\'s portrait</string>
+    <string name="appearancepage_failed">That picture could not be read. Try a photo.</string>
 </resources>

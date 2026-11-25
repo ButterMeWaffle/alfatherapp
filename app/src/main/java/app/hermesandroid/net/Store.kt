@@ -108,6 +108,10 @@ class Store(context: Context, private val encrypted: Boolean = true) {
     var haptics: Boolean
         get() = settings.getBoolean("haptics", true)
         set(v) = settings.edit().putBoolean("haptics", v).apply()
+    /** Settings > Appearance: the user's own portrait (absolute path), empty for the app's bundled art. */
+    var portrait: String
+        get() = settings.getString("portrait", "") ?: ""
+        set(v) = settings.edit().putString("portrait", v).apply()
     /** Voice (Settings > Voice): dictation engine "phone" | "hermes", read-aloud voice "hermes" | "phone", read-aloud speed. */
     var dictation: String
         get() = settings.getString("dictation", "phone") ?: "phone"

@@ -199,6 +199,7 @@ class AppGraph(private val context: Context) {
     init {
         app.hermesandroid.ui.theme.DisplayPrefs.chatScale = store.chatScale
         app.hermesandroid.ui.theme.DisplayPrefs.haptics = store.haptics
+        app.hermesandroid.ui.theme.Appearance.portrait = store.portrait.ifBlank { null }
         store.defaultName.takeIf { it.isNotBlank() }?.let { app.hermesandroid.ui.shell.defaultProfileTitle = it }
         // A ring left by a process that died mid-call (Android doesn't time out call notifications); reported on connect.
         app.hermesandroid.voice.HermesCalls.decode(store.pendingCall).let { call ->
@@ -372,6 +373,8 @@ class AppGraph(private val context: Context) {
 
     fun setChatScale(v: Float) { store.chatScale = v; app.hermesandroid.ui.theme.DisplayPrefs.chatScale = v }
     fun setHaptics(on: Boolean) { store.haptics = on; app.hermesandroid.ui.theme.DisplayPrefs.haptics = on }
+    /** Settings > Appearance: `path` is the stored portrait, empty to go back to the app's own art. */
+    fun setPortrait(path: String) { store.portrait = path; app.hermesandroid.ui.theme.Appearance.portrait = path.ifBlank { null } }
 
     private suspend fun loadProfiles() {
         runCatching {

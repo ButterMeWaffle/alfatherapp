@@ -96,6 +96,18 @@ import app.hermesandroid.ui.theme.settingsCard
 /** AllFather's portrait in a circle with a hairline rim: the app's identity on login, lock and the assistant. */
 @Composable
 fun AppIconArt(size: Dp) {
+    // The lock screen, the assistant and the call bubble are the app's face, so they follow the
+    // user's portrait too (Settings > Appearance) — a bitmap the same size, the same rim.
+    val custom = app.hermesandroid.ui.theme.Appearance.portraitImage(with(androidx.compose.ui.platform.LocalDensity.current) { size.roundToPx() })
+    if (custom != null) {
+        Image(
+            custom,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(size).clip(CircleShape).border(Dp.Hairline, C.colors.composerStroke, CircleShape),
+        )
+        return
+    }
     Image(
         painterResource(R.drawable.af_avatar),
         contentDescription = null,

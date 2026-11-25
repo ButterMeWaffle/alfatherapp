@@ -297,4 +297,16 @@
     <string name="filespage_empty">Carpeta vacía.</string>
     <string name="filespage_first_500">Se muestran los primeros 500 elementos.</string>
     <string name="filespage_truncated">Vista previa recortada: el archivo es más grande.</string>
+    <string name="settingsscreen_page_appearance">Apariencia</string>
+    <string name="settingsscreen_appearance_detail">Retrato</string>
+    <string name="appearancepage_portrait">Retrato</string>
+    <string name="appearancepage_portrait_help">Reemplaza el retrato propio de AllFather en el chat, la barra lateral, la pantalla de bloqueo y el asistente.</string>
+    <string name="appearancepage_using_custom">Usando tu imagen</string>
+    <string name="appearancepage_using_default">Usando el retrato de la app</string>
+    <string name="appearancepage_square_help">Recortada a cuadrado y guardada solo en este teléfono.</string>
+    <string name="appearancepage_pick">Elegir una imagen</string>
+    <string name="appearancepage_replace">Cambiar la imagen</string>
+    <string name="appearancepage_working">Preparando…</string>
+    <string name="appearancepage_reset">Volver al retrato de la app</string>
+    <string name="appearancepage_failed">No se pudo leer esa imagen. Prueba con una foto.</string>
 </resources>
