@@ -43,9 +43,11 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -228,8 +230,12 @@ fun ChatScreen(graph: AppGraph, onMenu: () -> Unit, onComposer: (Dp) -> Unit = {
                 }
                 val density = LocalDensity.current
                 Column(Modifier.navigationBarsPadding().imePadding().animateContentSize(Motion.enter()).onSizeChanged { onComposer(with(density) { it.height.toDp() }) }) {
-                    s.requests.forEach { RequestCard(s, it) }
-                    graph.phone.changes.open.forEach { PhoneChangeCard(graph, it) }
+                    // A batch of questions is taller than the screen in landscape. The asks scroll under the
+                    // composer, so the last question, its Answer button and the field to type in stay reachable.
+                    Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+                        s.requests.forEach { RequestCard(s, it) }
+                        graph.phone.changes.open.forEach { PhoneChangeCard(graph, it) }
+                    }
                     Composer(s, s.chatProfile ?: graph.profile, onModel = { sheet = Sheet.Model }, onContext = { sheet = Sheet.Context }, onAgents = { sheet = Sheet.Agents })
                 }
             }
