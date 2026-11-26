@@ -10,27 +10,27 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import app.hermesandroid.tasks.Segmented
 import app.hermesandroid.ui.components.HeroArt
-import app.hermesandroid.ui.theme.Haptic
 import app.hermesandroid.ui.theme.HeroMode
 import app.hermesandroid.ui.theme.Radii
-import app.hermesandroid.ui.theme.pressable
+import app.hermesandroid.ui.theme.Tint
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -65,7 +65,6 @@ import kotlin.math.min
  * a content Uri — every other image path here copies bytes), so it survives the picker's temporary
  * grant, the app's restart, and a source photo that is later edited, moved or deleted.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppearancePage(graph: AppGraph) {
     val c = C.colors
@@ -98,6 +97,20 @@ fun AppearancePage(graph: AppGraph) {
             }
         }
     }
+    Card(stringResource(R.string.appearancepage_theme), AF.Grid) {
+        Help(stringResource(R.string.appearancepage_theme_help))
+        ThemePreview(Appearance.tint)
+        // Seven names do not fit a Segmented, so each theme is a row carrying its own ramp as chips. It is a
+        // card of its own and not a detail of the Backdrop: a theme paints every screen, and someone who
+        // keeps the app's own art must still be able to pick one. Tapping a row retints the app under the
+        // page and keeps you here, so the ramps can be flicked through and compared.
+        Tint.values().forEachIndexed { i, tint ->
+            CapRow(stringResource(tint.label), null, i == 0, onClick = { graph.setTint(tint.key) }) {
+                TintChips(tint, tint == Appearance.tint)
+            }
+        }
+    }
+
     Card(stringResource(R.string.appearancepage_portrait), AF.Image) {
         Help(stringResource(R.string.appearancepage_portrait_help))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -138,27 +151,14 @@ fun AppearancePage(graph: AppGraph) {
         Segmented(
             listOf(
                 stringResource(R.string.appearancepage_mode_art),
-                stringResource(R.string.appearancepage_mode_colour),
+                stringResource(R.string.appearancepage_mode_flat),
                 stringResource(R.string.appearancepage_mode_picture),
             ),
             Appearance.heroMode.ordinal,
         ) { graph.setHeroMode(MODES[it]) }
         when (Appearance.heroMode) {
             HeroMode.Art -> {}
-            HeroMode.Colour -> {
-                Help(stringResource(R.string.appearancepage_colour_help))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SWATCHES.forEachIndexed { i, argb ->
-                        val sel = argb == Appearance.heroColour
-                        val name = stringResource(R.string.appearancepage_swatch, i + 1)
-                        Box(
-                            Modifier.size(32.dp).clip(CircleShape).background(Color(argb))
-                                .border(if (sel) 2.dp else Dp.Hairline, if (sel) c.text else c.hairline, CircleShape)
-                                .semantics { contentDescription = name }.pressable(label = name, haptic = Haptic.Selection) { graph.setHeroColour(argb) },
-                        )
-                    }
-                }
-            }
+            HeroMode.Flat -> Help(stringResource(R.string.appearancepage_flat_help))
             HeroMode.Picture -> {
                 Help(stringResource(R.string.appearancepage_picture_help))
                 when {
@@ -201,16 +201,76 @@ private fun storePortrait(context: Context, uri: Uri): String? = runCatching {
 /** The stored copy goes with the setting: a reset leaves no orphan file behind. */
 private fun deletePortrait(context: Context) { runCatching { File(context.filesDir, "appearance/portrait.png").delete() } }
 
-/** The swatch order and their stored names: the segmented control and [MODES] stay in step by index. */
-private val MODES = listOf("art", "colour", "picture")
+/** The mode order and their stored names: the segmented control and [MODES] stay in step by index. */
+private val MODES = listOf("art", "flat", "picture")
 
 /**
- * Backdrop swatches: the graphite family, then a few muted hues. Every one is dark, because the login
- * wordmark sits on this panel in off-white (design system: off-white text, `canvas` near-black).
+ * A sample of the picked theme, drawn from its own tokens: the ground a screen is laid on, a card on it,
+ * a raised well as the composer with its accent button, and the status dots. The ink, the accent and the
+ * status colours are deliberately not faked here — a theme moves the ground only, so every colour this
+ * panel shows for the sample text is exactly the colour the app will use. The panel is the app under your
+ * finger, framed, so a ramp can be read before it covers the screen.
  */
-private val SWATCHES = listOf(
-    0xFF0B0B0CL, 0xFF1A1A1BL, 0xFF16202CL, 0xFF10201FL, 0xFF14211BL, 0xFF211623L, 0xFF241A12L, 0xFF251317L,
-)
+@Composable
+private fun ThemePreview(tint: Tint) {
+    val c = C.colors
+    // Hoisted: stringResource is a composable call and the semantics lambda is not one.
+    val label = stringResource(R.string.appearancepage_theme_preview_of, stringResource(tint.label))
+    Column(
+        Modifier.fillMaxWidth().semantics { contentDescription = label }
+            .clip(Radii.md).background(tint.canvas).border(Dp.Hairline, c.hairline, Radii.md).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().clip(Radii.sm).background(tint.surface).padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Text(stringResource(R.string.appearancepage_theme_sample_user), style = CType.footnote, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(stringResource(R.string.appearancepage_theme_sample_reply), style = CType.caption, color = c.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        Row(
+            Modifier.fillMaxWidth().clip(Radii.sm).background(tint.raised).padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                stringResource(R.string.appearancepage_theme_sample_composer),
+                style = CType.footnote, color = c.tertiary, modifier = Modifier.weight(1f),
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            Box(Modifier.size(24.dp).clip(Radii.pill).background(c.accent), contentAlignment = Alignment.Center) {
+                Icon(AF.Send, null, tint = c.onAccent, modifier = Modifier.size(13.dp))
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            listOf(c.success, c.attention, c.blue).forEach { dot ->
+                Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
+            }
+            Text(stringResource(R.string.appearancepage_theme_preview), style = CType.caption2, color = c.tertiary, modifier = Modifier.padding(start = 3.dp))
+        }
+    }
+}
+
+/**
+ * The three tokens a theme moves, as chips at the end of its row, with the mark of the picked one. The
+ * chips are decoration inside a tappable row, so the group needs a name of its own: a bare coloured Box
+ * says nothing to TalkBack, and a press label only names the click action, never the control.
+ */
+@Composable
+private fun TintChips(tint: Tint, selected: Boolean) {
+    val c = C.colors
+    val chips = stringResource(R.string.appearancepage_theme_chips)
+    Row(
+        Modifier.semantics { contentDescription = chips },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        listOf(tint.canvas, tint.surface, tint.raised).forEach { chip ->
+            Box(Modifier.size(16.dp).clip(Radii.sm).background(chip).border(Dp.Hairline, c.hairline, Radii.sm))
+        }
+        if (selected) Icon(AF.Check, stringResource(R.string.appearancepage_theme_selected), tint = c.accent, modifier = Modifier.size(16.dp))
+    }
+}
 
 /**
  * The picked backdrop, kept at screen width in the app's private files as JPEG (a hero is a photo, not

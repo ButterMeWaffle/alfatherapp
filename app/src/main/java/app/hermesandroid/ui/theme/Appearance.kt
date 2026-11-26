@@ -3,7 +3,6 @@ package app.hermesandroid.ui.theme
 import android.graphics.ImageDecoder
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -18,8 +17,8 @@ enum class HeroMode {
     /** AllFather's own art: the mascot portraits. */
     Art,
 
-    /** A flat colour the user picked, in every place the mascot appeared. */
-    Colour,
+    /** A flat panel in the theme's canvas colour, in every place the mascot appeared. */
+    Flat,
 
     /** The user's own picture, stored in the app's files like the portrait. */
     Picture,
@@ -31,7 +30,8 @@ enum class HeroMode {
  * composition reads this snapshot and AppGraph's setter writes both sides. Device-wide on purpose —
  * a portrait is not a per-dashboard notion.
  *
- * The Backdrop (what the heroes draw) lives here for the same reason and with the same setters.
+ * The Backdrop (what the heroes draw) and the theme (what colour the app's surfaces are) live here for
+ * the same reason and with the same setters.
  */
 object Appearance {
     /** Absolute path of the stored square portrait, or null for the app's own art. */
@@ -43,8 +43,13 @@ object Appearance {
     /** What the heroes draw. `Art` is the app as shipped: nothing here changes it by default. */
     var heroMode by mutableStateOf(HeroMode.Art)
 
-    /** The Backdrop colour as ARGB, used in [HeroMode.Colour]. Dark by default (slate). */
-    var heroColour by mutableLongStateOf(0xFF16202CL)
+    /**
+     * The app's theme: the surface tokens every screen draws on (Settings > Appearance > Backdrop).
+     * [Tint.Graphite] is the app as shipped. Device-wide on purpose, like the portrait: a theme is not
+     * a per-dashboard notion, and it is read during composition by [afColors], so a new value retints
+     * the app at once.
+     */
+    var tint by mutableStateOf(Tint.Graphite)
 
     /** Absolute path of the stored backdrop picture, or null to fall back to the app's art. */
     var heroImage by mutableStateOf<String?>(null)
@@ -55,8 +60,19 @@ object Appearance {
     /**
      * The stored string back into a [HeroMode]. Store keeps it lowercase; an unknown value (a future
      * mode written by a newer app, or a hand-edited file) reads as the app's own art, never a crash.
+     * `"colour"` is the name the flat mode shipped with in the Backdrop build: a user who picked a
+     * swatch there keeps the panel they chose, in the theme's canvas.
      */
-    fun modeOf(stored: String): HeroMode = HeroMode.values().firstOrNull { it.name.lowercase() == stored } ?: HeroMode.Art
+    fun modeOf(stored: String): HeroMode = when (stored) {
+        "colour" -> HeroMode.Flat
+        else -> HeroMode.values().firstOrNull { it.name.lowercase() == stored } ?: HeroMode.Art
+    }
+
+    /**
+     * The stored string back into a [Tint], the same tolerant way: a theme written by a newer app reads
+     * as graphite, the app as shipped, and never crashes the launch it is loaded in.
+     */
+    fun tintOf(stored: String): Tint = Tint.values().firstOrNull { it.key == stored } ?: Tint.Graphite
 
     /**
      * The stored portrait decoded for the size it shows, or null to fall back to the bundled art.

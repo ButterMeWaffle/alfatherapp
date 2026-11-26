@@ -98,15 +98,15 @@ import app.hermesandroid.ui.theme.fadeToCanvas
 
 /**
  * A face in a circle with a hairline rim: the app's identity on login, lock, the assistant and the
- * call. It follows Settings > Appearance — a flat Backdrop colour, the user's own portrait, or the
- * app's art — so the mascot can be turned off everywhere at once.
+ * call. It follows Settings > Appearance — a flat Backdrop in the theme's canvas, the user's own
+ * portrait, or the app's art — so the mascot can be turned off everywhere at once.
  */
 @Composable
 fun FaceArt(art: Int, size: Dp) {
     val c = C.colors
     val rim = Modifier.size(size).clip(CircleShape).border(Dp.Hairline, c.composerStroke, CircleShape)
-    if (Appearance.heroMode == HeroMode.Colour) {
-        Box(rim.background(Color(Appearance.heroColour)))
+    if (Appearance.heroMode == HeroMode.Flat) {
+        Box(rim.background(c.canvas))
         return
     }
     // The lock screen, the assistant and the call bubble are the app's face, so they follow the
@@ -135,9 +135,10 @@ fun AppIconArt(size: Dp) = FaceArt(R.drawable.af_avatar, size)
  */
 @Composable
 fun HeroArt(art: Int, modifier: Modifier = Modifier, px: Int = 1080, fade: Float = 0.5f, alignment: Alignment = Alignment.Center) {
+    val c = C.colors
     val image = if (Appearance.heroMode == HeroMode.Picture) Appearance.heroImagePx(px) else null
     when {
-        Appearance.heroMode == HeroMode.Colour -> Box(modifier.background(Color(Appearance.heroColour)).fadeToCanvas(fade))
+        Appearance.heroMode == HeroMode.Flat -> Box(modifier.background(c.canvas).fadeToCanvas(fade))
         image != null -> Image(image, contentDescription = null, contentScale = ContentScale.Crop, alignment = alignment, modifier = modifier.fadeToCanvas(fade))
         else -> Image(painterResource(art), contentDescription = null, contentScale = ContentScale.Crop, alignment = alignment, modifier = modifier.fadeToCanvas(fade))
     }
