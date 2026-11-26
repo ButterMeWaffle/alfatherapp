@@ -298,7 +298,7 @@
     <string name="filespage_first_500">Se muestran los primeros 500 elementos.</string>
     <string name="filespage_truncated">Vista previa recortada: el archivo es más grande.</string>
     <string name="settingsscreen_page_appearance">Apariencia</string>
-    <string name="settingsscreen_appearance_detail">Retrato</string>
+    <string name="settingsscreen_appearance_detail">Retrato, fondo</string>
     <string name="appearancepage_portrait">Retrato</string>
     <string name="appearancepage_portrait_help">Reemplaza el retrato propio de AllFather en el chat, la barra lateral, la pantalla de bloqueo y el asistente.</string>
     <string name="appearancepage_using_custom">Usando tu imagen</string>
@@ -309,4 +309,13 @@
     <string name="appearancepage_working">Preparando…</string>
     <string name="appearancepage_reset">Volver al retrato de la app</string>
     <string name="appearancepage_failed">No se pudo leer esa imagen. Prueba con una foto.</string>
+    <string name="appearancepage_backdrop">Fondo</string>
+    <string name="appearancepage_backdrop_help">Lo que la app dibuja detrás del saludo, en el acceso y en la llamada. La mascota puede quitarse.</string>
+    <string name="appearancepage_mode_art">Arte</string>
+    <string name="appearancepage_mode_colour">Color</string>
+    <string name="appearancepage_mode_picture">Imagen</string>
+    <string name="appearancepage_colour_help">Un color plano. El texto del saludo va debajo del panel, así que no cuesta legibilidad.</string>
+    <string name="appearancepage_swatch">Color de fondo %1$d</string>
+    <string name="appearancepage_picture_help">Las imágenes anchas quedan mejor. Se guarda solo en este teléfono.</string>
+    <string name="appearancepage_backdrop_reset">Volver al arte de la app</string>
 </resources>

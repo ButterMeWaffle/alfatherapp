@@ -200,6 +200,9 @@ class AppGraph(private val context: Context) {
         app.hermesandroid.ui.theme.DisplayPrefs.chatScale = store.chatScale
         app.hermesandroid.ui.theme.DisplayPrefs.haptics = store.haptics
         app.hermesandroid.ui.theme.Appearance.portrait = store.portrait.ifBlank { null }
+        app.hermesandroid.ui.theme.Appearance.heroMode = app.hermesandroid.ui.theme.Appearance.modeOf(store.heroMode)
+        app.hermesandroid.ui.theme.Appearance.heroColour = store.heroColour
+        app.hermesandroid.ui.theme.Appearance.heroImage = store.heroImage.ifBlank { null }
         store.defaultName.takeIf { it.isNotBlank() }?.let { app.hermesandroid.ui.shell.defaultProfileTitle = it }
         // A ring left by a process that died mid-call (Android doesn't time out call notifications); reported on connect.
         app.hermesandroid.voice.HermesCalls.decode(store.pendingCall).let { call ->
@@ -375,6 +378,18 @@ class AppGraph(private val context: Context) {
     fun setHaptics(on: Boolean) { store.haptics = on; app.hermesandroid.ui.theme.DisplayPrefs.haptics = on }
     /** Settings > Appearance: `path` is the stored portrait, empty to go back to the app's own art. */
     fun setPortrait(path: String) { store.portrait = path; app.hermesandroid.ui.theme.Appearance.portrait = path.ifBlank { null } }
+
+    /** Settings > Appearance > Backdrop: `mode` is "art" | "colour" | "picture". */
+    fun setHeroMode(mode: String) {
+        store.heroMode = mode
+        app.hermesandroid.ui.theme.Appearance.heroMode = app.hermesandroid.ui.theme.Appearance.modeOf(mode)
+    }
+
+    /** Settings > Appearance > Backdrop: the picked colour as ARGB. */
+    fun setHeroColour(argb: Long) { store.heroColour = argb; app.hermesandroid.ui.theme.Appearance.heroColour = argb }
+
+    /** Settings > Appearance > Backdrop: `path` is the stored picture, empty to fall back to the app's art. */
+    fun setHeroImage(path: String) { store.heroImage = path; app.hermesandroid.ui.theme.Appearance.heroImage = path.ifBlank { null } }
 
     private suspend fun loadProfiles() {
         runCatching {

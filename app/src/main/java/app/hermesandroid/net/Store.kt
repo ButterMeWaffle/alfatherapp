@@ -112,6 +112,18 @@ class Store(context: Context, private val encrypted: Boolean = true) {
     var portrait: String
         get() = settings.getString("portrait", "") ?: ""
         set(v) = settings.edit().putString("portrait", v).apply()
+    /** Settings > Appearance > Backdrop: what the heroes draw — "art" | "colour" | "picture". */
+    var heroMode: String
+        get() = settings.getString("heroMode", "art") ?: "art"
+        set(v) = settings.edit().putString("heroMode", v).apply()
+    /** Settings > Appearance > Backdrop: the picked colour as ARGB. Dark by default (slate). */
+    var heroColour: Long
+        get() = settings.getLong("heroColour", 0xFF16202CL)
+        set(v) = settings.edit().putLong("heroColour", v).apply()
+    /** Settings > Appearance > Backdrop: the user's own picture (absolute path), empty for the app's art. */
+    var heroImage: String
+        get() = settings.getString("heroImage", "") ?: ""
+        set(v) = settings.edit().putString("heroImage", v).apply()
     /** Voice (Settings > Voice): dictation engine "phone" | "hermes", read-aloud voice "hermes" | "phone", read-aloud speed. */
     var dictation: String
         get() = settings.getString("dictation", "phone") ?: "phone"
