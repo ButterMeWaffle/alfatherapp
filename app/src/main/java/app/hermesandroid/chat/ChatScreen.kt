@@ -689,10 +689,13 @@ private fun SystemNote(text: String, label: String, error: Boolean, command: Boo
 /** What the folded drawer says: "2 questions · 1 approval waiting". */
 @Composable
 private fun asksSummary(asks: List<ServerRequest>, changes: List<app.hermesandroid.phone.PhoneChange>): String {
+    // A clarify request carries its whole batch inside one request (`questions[]`), so the bar counts the
+    // questions — counting the requests folded three of them down to "1 question".
+    val clarify = asks.filter { it.method != "approval" }
+    val q = clarify.sumOf { questionsOf(it.params).first.size }
+    val a = asks.size - clarify.size
     val parts = buildList {
-        val q = asks.count { it.method != "approval" }
         if (q > 0) add(pluralStringResource(R.plurals.chatscreen_ask_questions, q, q))
-        val a = asks.size - q
         if (a > 0) add(pluralStringResource(R.plurals.chatscreen_ask_approvals, a, a))
         if (changes.isNotEmpty()) add(pluralStringResource(R.plurals.chatscreen_ask_changes, changes.size, changes.size))
     }
